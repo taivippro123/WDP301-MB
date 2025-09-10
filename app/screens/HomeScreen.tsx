@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import React, { useRef, useState } from 'react';
 import {
   Animated,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 
 export default function HomeScreen() {
+  const navigation = useNavigation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [activeTab, setActiveTab] = useState(0);
@@ -365,7 +367,11 @@ export default function HomeScreen() {
         {/* Products Grid */}
         <View style={styles.productsContainer}>
           {products.map((product) => (
-            <TouchableOpacity key={product.id} style={styles.productItem}>
+            <TouchableOpacity 
+              key={product.id} 
+              style={styles.productItem}
+              onPress={() => navigation.navigate('ProductDetail', { productId: product.id })}
+            >
               <View style={styles.productImage}>
                 <Ionicons name="image-outline" size={40} color="#ccc" />
               </View>

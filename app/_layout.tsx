@@ -16,6 +16,7 @@ import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import ManageListingsScreen from './screens/ManageListingsScreen';
 import PostListingScreen from './screens/PostListingScreen';
+import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
 
 const Tab = createBottomTabNavigator();
@@ -26,6 +27,16 @@ function ChatStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ChatList" component={ChatScreen} />
+    </Stack.Navigator>
+  );
+}
+
+// Create a stack navigator for Home that includes ProductDetail
+function HomeStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="HomeList" component={HomeScreen} />
+      <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
     </Stack.Navigator>
   );
 }
@@ -60,7 +71,7 @@ function AppContent() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap;
+          let iconName: keyof typeof Ionicons.glyphMap = 'home-outline';
           
           if (route.name === 'Trang chủ') {
             iconName = focused ? 'home' : 'home-outline';
@@ -139,7 +150,7 @@ function AppContent() {
         ),
       })}
     >
-      <Tab.Screen name="Trang chủ" component={HomeScreen} />
+      <Tab.Screen name="Trang chủ" component={HomeStack} />
       <Tab.Screen name="Quản lí tin" component={ManageListingsScreen} />
       <Tab.Screen name="Đăng tin" component={PostListingScreen} options={{ tabBarLabel: () => null }} />
       <Tab.Screen name="Chat" component={ChatStack} />
