@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import React from 'react';
 import {
   Alert,
@@ -15,19 +16,18 @@ interface AccountScreenProps {
 }
 
 export default function AccountScreen({ onLogout }: AccountScreenProps) {
+  const navigation = useNavigation();
   const menuItems = [
     {
       section: 'Tiện ích',
       items: [
         { icon: 'heart', title: 'Tin đăng đã lưu', hasArrow: true },
-        { icon: 'bookmark', title: 'Tìm kiếm đã lưu', hasArrow: true },
         { icon: 'star', title: 'Đánh giá từ tôi', hasArrow: true }
       ]
     },
     {
       section: 'Dịch vụ trả phí',
       items: [
-        { icon: 'diamond', title: 'Đồng Tốt', hasArrow: true, badge: 'ĐT' },
         { icon: 'shield-checkmark', title: 'Gói Pro', hasArrow: true, badge: 'PRO' }
       ]
     },
@@ -35,19 +35,6 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
       section: 'Khác',
       items: [
         { icon: 'time', title: 'Lịch sử giao dịch', hasArrow: true },
-        { icon: 'storefront', title: 'Cửa hàng / chuyên trang', hasArrow: true, subtitle: 'Tạo ngay' }
-      ]
-    },
-    {
-      section: 'Ưu đãi, khuyến mãi',
-      items: [
-        { icon: 'diamond', title: 'Chợ Tốt Ưu Đãi', hasArrow: true },
-        { icon: 'pricetag', title: 'Ưu Đãi của tôi', hasArrow: true }
-      ]
-    },
-    {
-      section: 'Khác',
-      items: [
         { icon: 'settings', title: 'Cài đặt tài khoản', hasArrow: true },
         { icon: 'desktop', title: 'Quản lý lịch sử đăng nhập', hasArrow: true },
         { icon: 'headset', title: 'Trợ giúp', hasArrow: true },
@@ -153,18 +140,6 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
             <View style={styles.profileDetails}>
               <Text style={styles.profileName}>Thành Tài</Text>
               
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Người theo dõi</Text>
-                  <Text style={styles.statValue}>0</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Đang theo dõi</Text>
-                  <Text style={styles.statValue}>2</Text>
-                </View>
-              </View>
-              
               <View style={styles.userInfo}>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>TK Định danh:</Text>
@@ -176,17 +151,20 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
                 </View>
                 
                 <View style={styles.dongTotRow}>
-                  <Text style={styles.dongTotLabel}>Đồng Tốt</Text>
+                  <Text style={styles.dongTotLabel}>Ví Ecoin:</Text>
                   <View style={styles.dongTotBadge}>
                     <Text style={styles.dongTotValue}>0</Text>
                     <View style={styles.dongTotIcon}>
-                      <Text style={styles.dongTotIconText}>ĐT</Text>
+                      <Text style={styles.dongTotIconText}>Xu</Text>
                     </View>
                   </View>
                 </View>
               </View>
               
-              <TouchableOpacity style={styles.topUpButton}>
+              <TouchableOpacity 
+                style={styles.topUpButton}
+                onPress={() => (navigation as any).navigate('TopUp')}
+              >
                 <Text style={styles.topUpButtonText}>Nạp ngay</Text>
               </TouchableOpacity>
             </View>

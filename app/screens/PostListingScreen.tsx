@@ -44,6 +44,76 @@ export default function PostListingScreen() {
         Alert.alert('Thành công', 'Tin đăng đã được gửi và đang chờ duyệt');
     };
 
+    const handleAIPriceSuggestion = () => {
+        if (!formData.category || !formData.vehicleType) {
+            Alert.alert(
+                'Thông tin thiếu',
+                'Vui lòng điền đầy đủ thông tin trước khi sử dụng AI gợi ý giá.'
+            );
+            return;
+        }
+
+        // Simulate AI processing
+        Alert.alert(
+            'AI đang phân tích...',
+            'Vui lòng chờ ít giây để AI phân tích thị trường và đưa ra gợi ý giá tốt nhất.',
+            [
+                {
+                    text: 'Hủy',
+                    style: 'cancel'
+                },
+                {
+                    text: 'Đồng ý',
+                    onPress: () => {
+                        // Simulate AI price suggestion based on category and vehicle type
+                        setTimeout(() => {
+                            let suggestedPrice = '';
+                            const category = formData.category;
+                            const vehicleType = formData.vehicleType;
+                            
+                            // AI price logic simulation
+                            if (category === 'Xe máy điện') {
+                                if (vehicleType === 'VinFast') suggestedPrice = '35,000,000';
+                                else if (vehicleType === 'Honda') suggestedPrice = '28,000,000';
+                                else if (vehicleType === 'Yamaha') suggestedPrice = '25,000,000';
+                                else suggestedPrice = '30,000,000';
+                            } else if (category === 'Ô tô điện') {
+                                if (vehicleType === 'VinFast') suggestedPrice = '1,200,000,000';
+                                else if (vehicleType === 'Tesla') suggestedPrice = '2,500,000,000';
+                                else if (vehicleType === 'BYD') suggestedPrice = '1,800,000,000';
+                                else suggestedPrice = '1,500,000,000';
+                            } else if (category === 'Pin xe máy') {
+                                suggestedPrice = '8,500,000';
+                            } else if (category === 'Pin ô tô điện') {
+                                suggestedPrice = '450,000,000';
+                            } else {
+                                suggestedPrice = '50,000,000';
+                            }
+
+                            Alert.alert(
+                                '🤖 AI Gợi ý giá',
+                                `Dựa trên phân tích thị trường hiện tại:\n\n💰 Giá đề xuất: ${suggestedPrice} VNĐ\n\n📈 Đây là mức giá cạnh tranh dựa trên các sản phẩm tương tự đang bán trên thị trường.\n\nBạn có muốn sử dụng giá này không?`,
+                                [
+                                    {
+                                        text: 'Không, cảm ơn',
+                                        style: 'cancel'
+                                    },
+                                    {
+                                        text: 'Sử dụng giá này',
+                                        onPress: () => {
+                                            updateFormData('price', suggestedPrice);
+                                            Alert.alert('✅ Thành công', 'Giá AI gợi ý đã được áp dụng!');
+                                        }
+                                    }
+                                ]
+                            );
+                        }, 1500); // Simulate AI processing time
+                    }
+                }
+            ]
+        );
+    };
+
     const dismissKeyboard = () => {
         Keyboard.dismiss();
     };
@@ -115,7 +185,7 @@ export default function PostListingScreen() {
                                     onPress={() => updateFormData('condition', 'used')}
                                 >
                                     <Text style={[styles.conditionText, formData.condition === 'used' && styles.activeConditionText]}>
-                                        Đã sử dụng
+                                        Còn mới dưới 90%
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
@@ -123,7 +193,7 @@ export default function PostListingScreen() {
                                     onPress={() => updateFormData('condition', 'new')}
                                 >
                                     <Text style={[styles.conditionText, formData.condition === 'new' && styles.activeConditionText]}>
-                                        Mới
+                                        Còn mới trên 95%
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -135,19 +205,7 @@ export default function PostListingScreen() {
                             {renderDropdown('Loại xe', formData.vehicleType, 'vehicleType', true)}
                             {renderDropdown('Động cơ', formData.engine, 'engine')}
 
-                            <View style={styles.inputGroup}>
-                                <Text style={styles.label}>
-                                    Giá bán <Text style={styles.required}>*</Text>
-                                </Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="Nhập giá bán"
-                                    placeholderTextColor="#999"
-                                    value={formData.price}
-                                    onChangeText={(text) => updateFormData('price', text)}
-                                    keyboardType="numeric"
-                                />
-                            </View>
+                           
                         </View>
 
                         {/* Title and Description */}
@@ -184,47 +242,29 @@ export default function PostListingScreen() {
                                 />
                                 <Text style={styles.charCount}>{formData.description.length}/1500</Text>
                             </View>
-                        </View>
-
-                        {/* Seller Info */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>THÔNG TIN NGƯỜI BÁN</Text>
-
                             <View style={styles.inputGroup}>
-                                <Text style={styles.label}>Bạn là <Text style={styles.required}>*</Text></Text>
-                                <View style={styles.sellerButtons}>
-                                    <TouchableOpacity
-                                        style={[styles.sellerButton, formData.sellerType === 'individual' && styles.activeSellerButton]}
-                                        onPress={() => updateFormData('sellerType', 'individual')}
+                                <View style={styles.priceHeader}>
+                                    <Text style={styles.label}>
+                                        Giá bán <Text style={styles.required}>*</Text>
+                                    </Text>
+                                    <TouchableOpacity 
+                                        style={styles.aiButton}
+                                        onPress={handleAIPriceSuggestion}
                                     >
-                                        <Text style={[styles.sellerButtonText, formData.sellerType === 'individual' && styles.activeSellerButtonText]}>
-                                            Cá nhân
-                                        </Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.sellerButton, formData.sellerType === 'business' && styles.activeSellerButton]}
-                                        onPress={() => updateFormData('sellerType', 'business')}
-                                    >
-                                        <Text style={[styles.sellerButtonText, formData.sellerType === 'business' && styles.activeSellerButtonText]}>
-                                            Bán chuyên
-                                        </Text>
+                                        <Ionicons name="sparkles" size={16} color="#FF6B35" />
+                                        <Text style={styles.aiButtonText}>AI gợi ý giá</Text>
                                     </TouchableOpacity>
                                 </View>
-                            </View>
-
-                            <View style={styles.inputGroup}>
-                                <Text style={styles.label}>Địa chỉ <Text style={styles.required}>*</Text></Text>
                                 <TextInput
                                     style={styles.input}
-                                    placeholder="Nhập địa chỉ của bạn"
+                                    placeholder="Nhập giá bán"
                                     placeholderTextColor="#999"
-                                    value={formData.location}
-                                    onChangeText={(text) => updateFormData('location', text)}
+                                    value={formData.price}
+                                    onChangeText={(text) => updateFormData('price', text)}
+                                    keyboardType="numeric"
                                 />
                             </View>
-                        </View>
-
-                        {/* Buttons */}
+                            {/* Buttons */}
                         <View style={styles.buttonSection}>
                             <TouchableOpacity style={styles.previewButton}>
                                 <Text style={styles.previewButtonText}>Xem trước</Text>
@@ -233,6 +273,10 @@ export default function PostListingScreen() {
                                 <Text style={styles.submitButtonText}>Đăng tin</Text>
                             </TouchableOpacity>
                         </View>
+                        </View>
+
+
+                        
                     </ScrollView>
                 </KeyboardAvoidingView>
             </SafeAreaView>
@@ -459,5 +503,27 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#000',
         fontWeight: '600',
+    },
+    priceHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    aiButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFF5F0',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#FF6B35',
+    },
+    aiButtonText: {
+        fontSize: 12,
+        color: '#FF6B35',
+        fontWeight: '600',
+        marginLeft: 4,
     },
 });

@@ -1,8 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,7 @@ import NotificationScreen from './screens/NotificationScreen';
 import PostListingScreen from './screens/PostListingScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import TopUpScreen from './screens/TopUpScreen';
 import WishlistScreen from './screens/WishlistScreen';
 
 const Tab = createBottomTabNavigator();
@@ -40,7 +41,7 @@ function HomeStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeList" component={HomeScreen} />
       <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
-dd       <Stack.Screen name="Wishlist">
+      <Stack.Screen name="Wishlist">
         {({ navigation }) => (
           <ProtectedScreen screenName="Wishlist" navigation={navigation}>
             <WishlistScreen />
@@ -229,7 +230,12 @@ function AppContent() {
       <Tab.Screen name="Tài khoản">
         {({ navigation }) => (
           <ProtectedScreen screenName="Tài khoản" navigation={navigation}>
-            <AccountScreen onLogout={logout} />
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="AccountMain">
+                {() => <AccountScreen onLogout={logout} />}
+              </Stack.Screen>
+              <Stack.Screen name="TopUp" component={TopUpScreen} />
+            </Stack.Navigator>
           </ProtectedScreen>
         )}
       </Tab.Screen>

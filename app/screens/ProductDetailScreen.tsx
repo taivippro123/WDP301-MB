@@ -2,9 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Dimensions,
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -115,13 +117,37 @@ export default function ProductDetailScreen() {
   };
 
   const handleCallPress = () => {
-    // In a real app, this would initiate a phone call
-    console.log('Calling seller:', product.seller.phone);
+    Alert.alert(
+      'Gọi điện thoại',
+      `Số điện thoại: ${product.seller.phone}\n\nBạn có muốn gọi điện cho người bán không?`,
+      [
+        {
+          text: 'Hủy',
+          style: 'cancel'
+        },
+        {
+          text: 'Gọi ngay',
+          onPress: () => {
+            const phoneUrl = `tel:${product.seller.phone.replace(/\*/g, '')}`;
+            Linking.openURL(phoneUrl).catch(err => {
+              Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi');
+            });
+          }
+        }
+      ]
+    );
   };
 
   const handleChatPress = () => {
-    // In a real app, this would open chat
-    console.log('Opening chat with seller');
+    // Navigate directly to chat screen
+    (navigation as any).navigate('Chat');
+  };
+
+  const handlePhonePress = () => {
+    const phoneUrl = `tel:${product.seller.phone.replace(/\*/g, '')}`;
+    Linking.openURL(phoneUrl).catch(err => {
+      Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi');
+    });
   };
 
   const handleZaloPress = () => {
@@ -240,10 +266,20 @@ export default function ProductDetailScreen() {
           {/* Seller Contact */}
           <View style={styles.sellerContainer}>
             <Text style={styles.sectionTitle}>Thông tin liên hệ</Text>
-            <Text style={styles.sellerPhone}>
-              SĐT liên hệ: {product.seller.phone}{' '}
-              <Text style={styles.callNowText}>Gọi ngay</Text>
-            </Text>
+            <View style={styles.sellerInfo}>
+              <View style={styles.sellerDetails}>
+                <Text style={styles.sellerName}>{product.seller.name}</Text>
+                <TouchableOpacity onPress={handlePhonePress}>
+                  <Text style={styles.sellerPhone}>{product.seller.phone}</Text>
+                </TouchableOpacity>
+                <Text style={styles.sellerLocation}>{product.seller.location}</Text>
+                <Text style={styles.postTime}>{product.seller.postTime}</Text>
+              </View>
+              <TouchableOpacity style={styles.chatIconButton} onPress={handleChatPress}>
+                <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+                <Text style={styles.chatButtonText}>Chat</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Vehicle Info */}
@@ -303,24 +339,6 @@ export default function ProductDetailScreen() {
             </View>
           </View>
 
-          {/* Comments Section */}
-          <View style={styles.commentsContainer}>
-            <Text style={styles.sectionTitle}>Bình luận</Text>
-            <View style={styles.noComments}>
-              <Ionicons name="chatbubbles-outline" size={48} color="#ccc" />
-              <Text style={styles.noCommentsText}>Chưa có bình luận nào.</Text>
-              <Text style={styles.noCommentsSubtext}>Hãy để lại bình luận cho người bán.</Text>
-            </View>
-            
-            <View style={styles.commentInputContainer}>
-              <View style={styles.commentInput}>
-                <Text style={styles.commentPlaceholder}>Bình luận...</Text>
-              </View>
-              <TouchableOpacity style={styles.sendCommentButton}>
-                <Ionicons name="send" size={20} color="#4A90E2" />
-              </TouchableOpacity>
-            </View>
-          </View>
 
           {/* Spacing for bottom buttons */}
           <View style={styles.bottomSpacing} />
@@ -516,14 +534,58 @@ const styles = StyleSheet.create({
   sellerContainer: {
     marginBottom: 24,
   },
-  sellerPhone: {
-    fontSize: 16,
-    color: '#000',
-    fontWeight: '500',
+  sellerInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
-  callNowText: {
+  sellerDetails: {
+    flex: 1,
+  },
+  sellerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  sellerPhone: {
+    fontSize: 14,
     color: '#4A90E2',
+    fontWeight: '500',
+    marginBottom: 4,
     textDecorationLine: 'underline',
+  },
+  sellerLocation: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
+  postTime: {
+    fontSize: 12,
+    color: '#999',
+  },
+  chatIconButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFD700',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginLeft: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 3,
+  },
+  chatButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    marginLeft: 6,
   },
   vehicleInfoContainer: {
     marginBottom: 24,
@@ -556,45 +618,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'right',
     flex: 1,
-  },
-  commentsContainer: {
-    marginBottom: 24,
-  },
-  noComments: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  noCommentsText: {
-    fontSize: 16,
-    color: '#333',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  noCommentsSubtext: {
-    fontSize: 14,
-    color: '#666',
-  },
-  commentInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 16,
-  },
-  commentInput: {
-    flex: 1,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
-  },
-  commentPlaceholder: {
-    fontSize: 14,
-    color: '#999',
-  },
-  sendCommentButton: {
-    padding: 8,
   },
   bottomSpacing: {
     height: 100,
@@ -629,11 +652,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
     marginRight: 8,
-  },
-  chatButtonText: {
-    fontSize: 16,
-    color: '#495057',
-    fontWeight: '500',
   },
   zaloButton: {
     flex: 1,

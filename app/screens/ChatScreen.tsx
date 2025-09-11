@@ -306,9 +306,6 @@ export default function ChatScreen() {
     }
   };
 
-  const handleMicPress = () => {
-    Alert.alert('Ghi âm', 'Tính năng ghi âm sẽ được phát triển trong tương lai');
-  };
 
   const renderChatDetail = () => (
     <KeyboardAvoidingView 
@@ -396,21 +393,13 @@ export default function ChatScreen() {
               autoCorrect={false}
             />
             
-            {newMessage.trim() ? (
-              <TouchableOpacity 
-                style={styles.sendButton}
-                onPress={sendMessage}
-              >
-                <Ionicons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity 
-                style={styles.micButton}
-                onPress={handleMicPress}
-              >
-                <Ionicons name="mic" size={20} color="#666" />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              style={[styles.sendButton, !newMessage.trim() && styles.disabledButton]}
+              onPress={sendMessage}
+              disabled={!newMessage.trim()}
+            >
+              <Ionicons name="send" size={20} color={!newMessage.trim() ? "#ccc" : "#fff"} />
+            </TouchableOpacity>
           </View>
         </View>
       </PanGestureHandler>
@@ -768,11 +757,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  micButton: {
+  disabledButton: {
     backgroundColor: '#f0f0f0',
-    borderRadius: 20,
-    padding: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

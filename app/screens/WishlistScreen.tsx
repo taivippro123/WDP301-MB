@@ -462,6 +462,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f5f5f5",
+    marginTop: -50,
   },
   header: {
     flexDirection: "row",
@@ -472,6 +473,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+    paddingTop: 50,
   },
   backButton: {
     padding: 4,
