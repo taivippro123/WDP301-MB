@@ -16,9 +16,11 @@ import ChatScreen from './screens/ChatScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import ManageListingsScreen from './screens/ManageListingsScreen';
+import NotificationScreen from './screens/NotificationScreen';
 import PostListingScreen from './screens/PostListingScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import WishlistScreen from './screens/WishlistScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -32,20 +34,59 @@ function ChatStack() {
   );
 }
 
-// Create a stack navigator for Home that includes ProductDetail
+// Create a stack navigator for Home that includes ProductDetail, Wishlist, and Notification
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeList" component={HomeScreen} />
       <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+dd       <Stack.Screen name="Wishlist">
+        {({ navigation }) => (
+          <ProtectedScreen screenName="Wishlist" navigation={navigation}>
+            <WishlistScreen />
+          </ProtectedScreen>
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="Notification">
+        {({ navigation }) => (
+          <ProtectedScreen screenName="Notification" navigation={navigation}>
+            <NotificationScreen />
+          </ProtectedScreen>
+        )}
+      </Stack.Screen>
     </Stack.Navigator>
   );
 }
 
-// Main App with Authentication
-function AppContent() {
-  const { isAuthenticated, login, logout } = useAuth();
+// Protected route wrapper  
+function ProtectedScreen({ children, screenName, navigation }: { children: React.ReactNode; screenName: string; navigation: any }) {
+  const { isAuthenticated, login } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
+
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      // Hide bottom tab bar when showing login/register
+      navigation.setOptions({
+        tabBarStyle: { display: 'none' }
+      });
+    } else {
+      // Show bottom tab bar when authenticated
+      navigation.setOptions({
+        tabBarStyle: {
+          backgroundColor: 'white',
+          height: 90,
+          paddingBottom: 2,
+          paddingTop: 10,
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          borderTopWidth: 1,
+          borderTopColor: '#E5E5E7',
+        }
+      });
+    }
+  }, [isAuthenticated, navigation]);
 
   if (!isAuthenticated) {
     if (showRegister) {
@@ -63,13 +104,22 @@ function AppContent() {
       <LoginScreen 
         onLogin={login} 
         onNavigateToRegister={() => setShowRegister(true)}
+        onBackToHome={() => navigation.navigate('Trang chủ')}
+        showBackButton={true}
       />
     );
   }
 
+  return children;
+}
+
+// Main App with Authentication
+function AppContent() {
+  const { isAuthenticated, login, logout } = useAuth();
+
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      screenOptions={({ route, navigation }) => ({
         headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home-outline';
@@ -136,7 +186,10 @@ function AppContent() {
                 elevation: 8,
                 marginBottom: 5,
               }}>
-                <TouchableOpacity {...props} style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }} />
+                <TouchableOpacity 
+                  {...(props as any)} 
+                  style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+                />
               </View>
               <Text style={{
                 fontSize: 12,
@@ -146,17 +199,39 @@ function AppContent() {
               }}>Đăng tin</Text>
             </View>
           ) : (
-            <TouchableOpacity {...props} />
+            <TouchableOpacity {...props as any} />
           )
         ),
       })}
     >
       <Tab.Screen name="Trang chủ" component={HomeStack} />
-      <Tab.Screen name="Quản lí tin" component={ManageListingsScreen} />
-      <Tab.Screen name="Đăng tin" component={PostListingScreen} options={{ tabBarLabel: () => null }} />
-      <Tab.Screen name="Chat" component={ChatStack} />
+      <Tab.Screen name="Quản lí tin">
+        {({ navigation }) => (
+          <ProtectedScreen screenName="Quản lí tin" navigation={navigation}>
+            <ManageListingsScreen />
+          </ProtectedScreen>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Đăng tin" options={{ tabBarLabel: () => null }}>
+        {({ navigation }) => (
+          <ProtectedScreen screenName="Đăng tin" navigation={navigation}>
+            <PostListingScreen />
+          </ProtectedScreen>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Chat">
+        {({ navigation }) => (
+          <ProtectedScreen screenName="Chat" navigation={navigation}>
+            <ChatStack />
+          </ProtectedScreen>
+        )}
+      </Tab.Screen>
       <Tab.Screen name="Tài khoản">
-        {() => <AccountScreen onLogout={logout} />}
+        {({ navigation }) => (
+          <ProtectedScreen screenName="Tài khoản" navigation={navigation}>
+            <AccountScreen onLogout={logout} />
+          </ProtectedScreen>
+        )}
       </Tab.Screen>
     </Tab.Navigator>
   );

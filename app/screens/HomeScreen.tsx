@@ -235,10 +235,16 @@ export default function HomeScreen() {
               <Ionicons name="menu" size={24} color="#000" />
             </TouchableOpacity>
             <View style={styles.headerIcons}>
-              <TouchableOpacity style={styles.headerIcon}>
+              <TouchableOpacity 
+                style={styles.headerIcon}
+                onPress={() => (navigation as any).navigate('Wishlist')}
+              >
                 <Ionicons name="heart-outline" size={24} color="#000" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.headerIcon}>
+              <TouchableOpacity 
+                style={styles.headerIcon}
+                onPress={() => (navigation as any).navigate('Notification')}
+              >
                 <Ionicons name="notifications-outline" size={24} color="#000" />
               </TouchableOpacity>
             </View>
@@ -319,10 +325,16 @@ export default function HomeScreen() {
               </TouchableOpacity>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.compactIcon}>
+          <TouchableOpacity 
+            style={styles.compactIcon}
+            onPress={() => (navigation as any).navigate('Wishlist')}
+          >
             <Ionicons name="heart-outline" size={20} color="#000" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.compactIcon}>
+          <TouchableOpacity 
+            style={styles.compactIcon}
+            onPress={() => (navigation as any).navigate('Notification')}
+          >
             <Ionicons name="notifications-outline" size={20} color="#000" />
           </TouchableOpacity>
         </Animated.View>
@@ -370,7 +382,7 @@ export default function HomeScreen() {
             <TouchableOpacity 
               key={product.id} 
               style={styles.productItem}
-              onPress={() => navigation.navigate('ProductDetail', { productId: product.id })}
+              onPress={() => (navigation as any).navigate('ProductDetail', { productId: product.id })}
             >
               <View style={styles.productImage}>
                 <Ionicons name="image-outline" size={40} color="#ccc" />

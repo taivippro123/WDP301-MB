@@ -42,7 +42,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
       section: 'Ưu đãi, khuyến mãi',
       items: [
         { icon: 'diamond', title: 'Chợ Tốt Ưu Đãi', hasArrow: true },
-        { icon: 'percent', title: 'Ưu Đãi của tôi', hasArrow: true }
+        { icon: 'pricetag', title: 'Ưu Đãi của tôi', hasArrow: true }
       ]
     },
     {

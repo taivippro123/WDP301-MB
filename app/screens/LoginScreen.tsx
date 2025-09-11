@@ -15,9 +15,11 @@ import {
 interface LoginScreenProps {
   onLogin: (isAuthenticated: boolean) => void;
   onNavigateToRegister: () => void;
+  onBackToHome?: () => void;
+  showBackButton?: boolean;
 }
 
-export default function LoginScreen({ onLogin, onNavigateToRegister }: LoginScreenProps) {
+export default function LoginScreen({ onLogin, onNavigateToRegister, onBackToHome, showBackButton = false }: LoginScreenProps) {
   const [formData, setFormData] = useState({
     phoneOrEmail: '',
     password: '',
@@ -64,7 +66,13 @@ export default function LoginScreen({ onLogin, onNavigateToRegister }: LoginScre
       <SafeAreaView style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Đăng nhập</Text>
+          {showBackButton && (
+            <TouchableOpacity style={styles.backButton} onPress={onBackToHome}>
+              <Ionicons name="arrow-back" size={24} color="#000" />
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.headerTitle, showBackButton && styles.headerTitleWithBack]}>Đăng nhập</Text>
+          {showBackButton && <View style={styles.placeholder} />}
         </View>
 
         <View style={styles.content}>
@@ -201,11 +209,27 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingHorizontal: 16,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    left: 16,
+    padding: 4,
+    paddingBottom: 50
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#000',
+    textAlign: 'center',
+    paddingLeft: 50,
+  },
+  headerTitleWithBack: {
+    textAlign: 'center',
+  },
+  placeholder: {
+    width: 32,
   },
   content: {
     flex: 1,
