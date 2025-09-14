@@ -7,12 +7,14 @@ import {
   Dimensions,
   Image,
   Linking,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import ImageViewer from 'react-native-image-zoom-viewer';
 
 const { width, height } = Dimensions.get('window');
 
@@ -98,11 +100,17 @@ export default function ProductDetailScreen() {
   const { productId } = (route.params as { productId: number }) || { productId: 1 };
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
   const imageScrollViewRef = useRef<ScrollView>(null);
 
   // Find product by ID or use first product as default
   const product = sampleProducts.find(p => p.id === productId) || sampleProducts[0];
+
+  const imageUrls = product.images.map(image => ({
+    url: '',
+    props: { source: image }
+  }));
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 200],
@@ -155,8 +163,32 @@ export default function ProductDetailScreen() {
     console.log('Opening Zalo chat');
   };
 
+  const handleImagePress = (index: number) => {
+    setCurrentImageIndex(index);
+    setIsImageViewerVisible(true);
+  };
+
   return (
     <View style={styles.container}>
+      {/* Image Viewer Modal */}
+      <Modal visible={isImageViewerVisible} transparent={true}>
+        <ImageViewer
+          imageUrls={imageUrls}
+          index={currentImageIndex}
+          onCancel={() => setIsImageViewerVisible(false)}
+          enableSwipeDown
+          onSwipeDown={() => setIsImageViewerVisible(false)}
+          renderHeader={() => (
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setIsImageViewerVisible(false)}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          )}
+        />
+      </Modal>
+
       {/* Header */}
       <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
         <TouchableOpacity 
@@ -213,9 +245,13 @@ export default function ProductDetailScreen() {
             scrollEventThrottle={16}
           >
             {product.images.map((image, index) => (
-              <View key={index} style={styles.imageSlide}>
+              <TouchableOpacity 
+                key={index} 
+                style={styles.imageSlide}
+                onPress={() => handleImagePress(index)}
+              >
                 <Image source={image} style={styles.productImage} resizeMode="cover" />
-              </View>
+              </TouchableOpacity>
             ))}
           </ScrollView>
           
@@ -367,6 +403,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  closeButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+    paddingTop: 10,
+  },
   header: {
     position: 'absolute',
     top: 0,
@@ -432,6 +481,7 @@ const styles = StyleSheet.create({
   imageContainer: {
     height: 300,
     position: 'relative',
+    paddingTop: 10,
   },
   imageSlide: {
     width: width,
