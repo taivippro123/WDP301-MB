@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
@@ -14,41 +15,95 @@ import {
     TouchableWithoutFeedback,
     View
 } from 'react-native';
+import API_URL from '../../config/api';
+import { useAuth } from '../AuthContext';
 
 export default function PostListingScreen() {
+    const { accessToken } = useAuth();
     const [formData, setFormData] = useState({
-        condition: 'used',
-        category: '',
-        vehicleType: '',
-        engine: '',
-        price: '',
         title: '',
         description: '',
-        sellerType: 'individual',
-        location: ''
+        price: '',
+        category: 'vehicle',
+        brand: '',
+        model: '',
+        year: '',
+        condition: 'new',
+        imagesInput: '',
+        specifications: {
+            batteryCapacity: '',
+            range: '',
+            chargingTime: '',
+            power: '',
+            weight: '',
+            dimensions: '',
+            batteryType: '',
+            voltage: '',
+            capacity: '',
+            cycleLife: '',
+            operatingTemperature: '',
+            warranty: '',
+            compatibility: ''
+        }
     });
-
-    const categories = ['Xe máy điện', 'Ô tô điện', 'Pin xe máy', 'Pin ô tô điện'];
-    const vehicleTypes = ['VinFast', 'Honda', 'Yamaha', 'Tesla', 'BYD'];
-    const engines = ['48V 20Ah', '60V 32Ah', '72V 40Ah', '87.7 kWh', '75 kWh'];
 
     const updateFormData = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleSubmit = () => {
-        if (!formData.title || !formData.price || !formData.category) {
-            Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin bắt buộc');
+    const handleSubmit = async () => {
+        if (!formData.title || !formData.price) {
+            Alert.alert('Lỗi', 'Vui lòng nhập tiêu đề và giá bán');
             return;
         }
-        Alert.alert('Thành công', 'Tin đăng đã được gửi và đang chờ duyệt');
+        const yearNum = formData.year ? Number(formData.year) : undefined;
+        const priceNum = Number(String(formData.price).replace(/[^0-9.]/g, ''));
+        if (Number.isNaN(priceNum)) {
+            Alert.alert('Lỗi', 'Giá không hợp lệ');
+            return;
+        }
+        const images = (formData.imagesInput || '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
+        const payload: any = {
+            title: formData.title,
+            description: formData.description,
+            price: priceNum,
+            category: 'vehicle',
+            brand: formData.brand || undefined,
+            model: formData.model || undefined,
+            year: yearNum || undefined,
+            condition: formData.condition,
+            images,
+            specifications: { ...formData.specifications },
+        };
+        try {
+            const res = await fetch(`${API_URL}/api/products`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                },
+                body: JSON.stringify(payload),
+            });
+            const raw = await res.text();
+            let data: any = {};
+            try { data = raw ? JSON.parse(raw) : {}; } catch {}
+            if (!res.ok) {
+                throw new Error(data?.message || 'Không thể tạo sản phẩm');
+            }
+            Alert.alert('Thành công', 'Tin đăng đã được tạo thành công');
+        } catch (e: any) {
+            Alert.alert('Lỗi', e?.message || 'Có lỗi xảy ra');
+        }
     };
 
     const handleAIPriceSuggestion = () => {
-        if (!formData.category || !formData.vehicleType) {
+        if (!formData.brand || !formData.model) {
             Alert.alert(
                 'Thông tin thiếu',
-                'Vui lòng điền đầy đủ thông tin trước khi sử dụng AI gợi ý giá.'
+                'Vui lòng nhập Thương hiệu và Model trước khi dùng AI gợi ý giá.'
             );
             return;
         }
@@ -56,7 +111,7 @@ export default function PostListingScreen() {
         // Simulate AI processing
         Alert.alert(
             'AI đang phân tích...',
-            'Vui lòng chờ ít giây để AI phân tích thị trường và đưa ra gợi ý giá tốt nhất.',
+            'Vui lòng chờ ít giây để AI phân tích thị trường và đưa ra gợi ý giá.',
             [
                 {
                     text: 'Hủy',
@@ -68,27 +123,16 @@ export default function PostListingScreen() {
                         // Simulate AI price suggestion based on category and vehicle type
                         setTimeout(() => {
                             let suggestedPrice = '';
-                            const category = formData.category;
-                            const vehicleType = formData.vehicleType;
+                            const brand = (formData.brand || '').toLowerCase();
+                            const model = (formData.model || '').toLowerCase();
                             
                             // AI price logic simulation
-                            if (category === 'Xe máy điện') {
-                                if (vehicleType === 'VinFast') suggestedPrice = '35,000,000';
-                                else if (vehicleType === 'Honda') suggestedPrice = '28,000,000';
-                                else if (vehicleType === 'Yamaha') suggestedPrice = '25,000,000';
-                                else suggestedPrice = '30,000,000';
-                            } else if (category === 'Ô tô điện') {
-                                if (vehicleType === 'VinFast') suggestedPrice = '1,200,000,000';
-                                else if (vehicleType === 'Tesla') suggestedPrice = '2,500,000,000';
-                                else if (vehicleType === 'BYD') suggestedPrice = '1,800,000,000';
-                                else suggestedPrice = '1,500,000,000';
-                            } else if (category === 'Pin xe máy') {
-                                suggestedPrice = '8,500,000';
-                            } else if (category === 'Pin ô tô điện') {
-                                suggestedPrice = '450,000,000';
-                            } else {
-                                suggestedPrice = '50,000,000';
-                            }
+                            if (brand.includes('vinfast')) suggestedPrice = '35,000,000';
+                            else if (brand.includes('honda')) suggestedPrice = '28,000,000';
+                            else if (brand.includes('yamaha')) suggestedPrice = '25,000,000';
+                            else if (brand.includes('tesla')) suggestedPrice = '2,300,000,000';
+                            else if (brand.includes('byd')) suggestedPrice = '1,700,000,000';
+                            else suggestedPrice = '50,000,000';
 
                             Alert.alert(
                                 '🤖 AI Gợi ý giá',
@@ -118,17 +162,19 @@ export default function PostListingScreen() {
         Keyboard.dismiss();
     };
 
-    const renderDropdown = (label, value, field, required = false) => (
+    const renderInput = (label, value, onChange, required = false, keyboardType = 'default', placeholder) => (
         <View style={styles.inputGroup}>
             <Text style={styles.label}>
                 {label} {required && <Text style={styles.required}>*</Text>}
             </Text>
-            <TouchableOpacity style={styles.dropdown}>
-                <Text style={[styles.dropdownText, !value && styles.placeholder]}>
-                    {value || `Chọn ${label.toLowerCase()}`}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#666" />
-            </TouchableOpacity>
+            <TextInput
+                style={styles.input}
+                placeholder={placeholder || label}
+                placeholderTextColor="#999"
+                value={value}
+                onChangeText={onChange}
+                keyboardType={keyboardType}
+            />
         </View>
     );
 
@@ -158,10 +204,8 @@ export default function PostListingScreen() {
                     >
                         {/* Info Section */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>THÔNG TIN CHI TIẾT</Text>
-                            <Text style={styles.infoText}>
-                                Xem thêm về <Text style={styles.link}>Quy định đăng tin.</Text>
-                            </Text>
+                            <Text style={styles.sectionTitle}>THÔNG TIN SẢN PHẨM</Text>
+                            <Text style={styles.infoText}>Điền các thông tin cơ bản của sản phẩm.</Text>
                         </View>
 
                         {/* Image Upload */}
@@ -176,103 +220,90 @@ export default function PostListingScreen() {
                             </TouchableOpacity>
                         </View>
 
-                        {/* Condition */}
+                        {/* Core Fields */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Tình trạng <Text style={styles.required}>*</Text></Text>
+                            {renderInput('Tiêu đề', formData.title, (t) => updateFormData('title', t), true, 'default', 'VD: Tesla Model 3 2023...')}
+                            {renderInput('Mô tả', formData.description, (t) => updateFormData('description', t), false, 'default', 'Mô tả chi tiết...')}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Giá (VND) <Text style={styles.required}>*</Text></Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <TextInput
+                                        style={[styles.input, { flex: 1 }]}
+                                        placeholder="Nhập giá bán"
+                                        placeholderTextColor="#999"
+                                        value={String(formData.price)}
+                                        onChangeText={(t) => updateFormData('price', t)}
+                                        keyboardType="numeric"
+                                    />
+                                    <TouchableOpacity 
+                                        style={[styles.aiButton, { height: 44 }]} 
+                                        onPress={handleAIPriceSuggestion}
+                                    >
+                                        <Ionicons name="sparkles" size={16} color="#FF6B35" />
+                                        <Text style={styles.aiButtonText}>AI giá</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                            {renderInput('Thương hiệu', formData.brand, (t) => updateFormData('brand', t))}
+                            {renderInput('Model', formData.model, (t) => updateFormData('model', t))}
+                            {renderInput('Năm', formData.year, (t) => updateFormData('year', t), false, 'numeric')}
+
+                            <Text style={styles.label}>Tình trạng</Text>
                             <View style={styles.conditionButtons}>
-                                <TouchableOpacity
-                                    style={[styles.conditionButton, formData.condition === 'used' && styles.activeCondition]}
-                                    onPress={() => updateFormData('condition', 'used')}
-                                >
-                                    <Text style={[styles.conditionText, formData.condition === 'used' && styles.activeConditionText]}>
-                                        Còn mới dưới 90%
-                                    </Text>
-                                </TouchableOpacity>
                                 <TouchableOpacity
                                     style={[styles.conditionButton, formData.condition === 'new' && styles.activeCondition]}
                                     onPress={() => updateFormData('condition', 'new')}
                                 >
-                                    <Text style={[styles.conditionText, formData.condition === 'new' && styles.activeConditionText]}>
-                                        Còn mới trên 95%
-                                    </Text>
+                                    <Text style={[styles.conditionText, formData.condition === 'new' && styles.activeConditionText]}>Mới</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.conditionButton, formData.condition === 'used' && styles.activeCondition]}
+                                    onPress={() => updateFormData('condition', 'used')}
+                                >
+                                    <Text style={[styles.conditionText, formData.condition === 'used' && styles.activeConditionText]}>Đã qua sử dụng</Text>
                                 </TouchableOpacity>
                             </View>
+
+                            {renderInput('Ảnh (URL, cách nhau bởi dấu phẩy)', formData.imagesInput, (t) => updateFormData('imagesInput', t), false, 'default', 'https://..., https://...')}
                         </View>
 
-                        {/* Form Fields */}
+                        {/* Specifications */}
                         <View style={styles.section}>
-                            {renderDropdown('Hãng xe', formData.category, 'category', true)}
-                            {renderDropdown('Loại xe', formData.vehicleType, 'vehicleType', true)}
-                            {renderDropdown('Động cơ', formData.engine, 'engine')}
-
-                           
+                            <Text style={styles.sectionTitle}>THÔNG SỐ KỸ THUẬT</Text>
+                            {renderInput('Dung lượng pin', formData.specifications.batteryCapacity, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, batteryCapacity: t } })))}
+                            {renderInput('Quãng đường', formData.specifications.range, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, range: t } })))}
+                            {renderInput('Thời gian sạc', formData.specifications.chargingTime, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, chargingTime: t } })))}
+                            {renderInput('Công suất', formData.specifications.power, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, power: t } })))}
+                            {renderInput('Khối lượng', formData.specifications.weight, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, weight: t } })))}
+                            {renderInput('Kích thước', formData.specifications.dimensions, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, dimensions: t } })))}
+                            {renderInput('Loại pin', formData.specifications.batteryType, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, batteryType: t } })))}
+                            {renderInput('Điện áp', formData.specifications.voltage, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, voltage: t } })))}
+                            {renderInput('Dung lượng', formData.specifications.capacity, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, capacity: t } })))}
+                            {renderInput('Chu kỳ sạc', formData.specifications.cycleLife, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, cycleLife: t } })))}
+                            {renderInput('Nhiệt độ hoạt động', formData.specifications.operatingTemperature, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, operatingTemperature: t } })))}
+                            {renderInput('Bảo hành', formData.specifications.warranty, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, warranty: t } })))}
+                            {renderInput('Tương thích', formData.specifications.compatibility, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, compatibility: t } })))}
                         </View>
 
-                        {/* Title and Description */}
+                        {/* Submit */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>TIÊU ĐỀ TIN ĐĂNG VÀ MÔ TẢ CHI TIẾT</Text>
-
-                            <View style={styles.inputGroup}>
-                                <Text style={styles.label}>
-                                    Tiêu đề tin đăng <Text style={styles.required}>*</Text>
-                                </Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="VD: Xe máy điện VinFast Klara A2 2023"
-                                    placeholderTextColor="#999"
-                                    value={formData.title}
-                                    onChangeText={(text) => updateFormData('title', text)}
-                                    maxLength={50}
-                                />
-                                <Text style={styles.charCount}>{formData.title.length}/50</Text>
+                            <View style={styles.priceHeader}>
+                                <TouchableOpacity 
+                                    style={styles.aiButton}
+                                    onPress={handleAIPriceSuggestion}
+                                >
+                                    <Ionicons name="sparkles" size={16} color="#FF6B35" />
+                                    <Text style={styles.aiButtonText}>AI gợi ý giá</Text>
+                                </TouchableOpacity>
                             </View>
-
-                            <View style={styles.inputGroup}>
-                                <Text style={styles.label}>
-                                    Mô tả chi tiết <Text style={styles.required}>*</Text>
-                                </Text>
-                                <TextInput
-                                    style={[styles.input, styles.textArea]}
-                                    placeholder="- Xuất xứ, tình trạng chiếc xe&#10;- Chính sách bảo hành, bảo trì, đổi trả xe&#10;- Địa chỉ giao nhận, đổi trả xe&#10;- Thời gian sử dụng xe"
-                                    placeholderTextColor="#999"
-                                    value={formData.description}
-                                    onChangeText={(text) => updateFormData('description', text)}
-                                    multiline
-                                    maxLength={1500}
-                                />
-                                <Text style={styles.charCount}>{formData.description.length}/1500</Text>
+                            <View style={styles.buttonSection}>
+                                <TouchableOpacity style={styles.previewButton}>
+                                    <Text style={styles.previewButtonText}>Xem trước</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+                                    <Text style={styles.submitButtonText}>Đăng tin</Text>
+                                </TouchableOpacity>
                             </View>
-                            <View style={styles.inputGroup}>
-                                <View style={styles.priceHeader}>
-                                    <Text style={styles.label}>
-                                        Giá bán <Text style={styles.required}>*</Text>
-                                    </Text>
-                                    <TouchableOpacity 
-                                        style={styles.aiButton}
-                                        onPress={handleAIPriceSuggestion}
-                                    >
-                                        <Ionicons name="sparkles" size={16} color="#FF6B35" />
-                                        <Text style={styles.aiButtonText}>AI gợi ý giá</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="Nhập giá bán"
-                                    placeholderTextColor="#999"
-                                    value={formData.price}
-                                    onChangeText={(text) => updateFormData('price', text)}
-                                    keyboardType="numeric"
-                                />
-                            </View>
-                            {/* Buttons */}
-                        <View style={styles.buttonSection}>
-                            <TouchableOpacity style={styles.previewButton}>
-                                <Text style={styles.previewButtonText}>Xem trước</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                                <Text style={styles.submitButtonText}>Đăng tin</Text>
-                            </TouchableOpacity>
-                        </View>
                         </View>
 
 

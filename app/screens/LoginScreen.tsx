@@ -12,16 +12,18 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import { useAuth } from '../../app/AuthContext';
 import API_URL from '../../config/api';
 
 interface LoginScreenProps {
-  onLogin: (isAuthenticated: boolean) => void;
+  onLogin?: () => void;
   onNavigateToRegister: () => void;
   onBackToHome?: () => void;
   showBackButton?: boolean;
 }
 
 export default function LoginScreen({ onLogin, onNavigateToRegister, onBackToHome, showBackButton = false }: LoginScreenProps) {
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     phoneOrEmail: '',
     password: '',
@@ -59,9 +61,28 @@ export default function LoginScreen({ onLogin, onNavigateToRegister, onBackToHom
       const data = await response.json();
 
       if (response.ok) {
-        // Login successful
+        // Prefer the flat shape you provided, with safe fallbacks
+        const normalized = {
+          _id: data._id ?? data.user?._id,
+          name: data.name ?? data.user?.name ?? data.user?.fullName ?? data.fullName,
+          email: data.email ?? data.user?.email,
+          role: data.role ?? data.user?.role,
+          accessToken: data.accessToken ?? data.token ?? data.access_token ?? data.tokens?.accessToken,
+          refreshToken: data.refreshToken ?? data.refresh_token ?? data.tokens?.refreshToken,
+        };
+
+        if (!normalized.accessToken) {
+          setIsLoading(false);
+          Alert.alert('Lỗi', 'Phản hồi đăng nhập không hợp lệ (thiếu token).');
+          return;
+        }
+
+        try {
+          await login(normalized);
+        } catch (e) {
+          // ignore
+        }
         setIsLoading(false);
-        onLogin(true);
       } else {
         // Login failed - handle specific error messages
         let errorMessage = 'Tên đăng nhập hoặc mật khẩu không đúng';

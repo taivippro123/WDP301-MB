@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useRef, useState } from 'react';
 import {
@@ -15,102 +16,78 @@ import {
   View,
 } from 'react-native';
 import ImageViewer from 'react-native-image-zoom-viewer';
+import API_URL from '../../config/api';
+import { useAuth } from '../AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
-// Sample product data - in a real app, this would come from API or props
-const sampleProducts = [
-  { 
-    id: 1, 
-    title: 'Xe máy điện VinFast Klara A2', 
-    price: '35,000,000 VNĐ', 
-    location: 'Hà Nội',
-    brand: 'VinFast',
-    year: 2023,
-    batteryCapacity: '48V 20Ah',
-    batteryCondition: '95%',
-    mileage: '1,200 km',
-    installmentPrice: '9.98 triệu/tháng',
-    description: 'Pin catl - bền bỉ, tối ưu hiệu suất, vận hành mạnh mẽ\n\nHệ thống treo thể thao mới - lái êm ái, thoải mái trên mọi cung đường\n\nCách âm đạt đỉnh - tách biệt khỏi thế giới ồn ào, tận hưởng không gian riêng tư tuyệt đối\n\nÂm thanh vòm 3d sống động - biến mọi hành trình thành một buổi trình diễn âm nhạc cá nhân',
-    seller: {
-      name: 'Nguyễn Văn A',
-      phone: '093806****',
-      location: 'Phường Hiệp Phú (Quận 9 cũ), Thành phố Thủ Đức, Tp Hồ Chí Minh',
-      postTime: 'Đăng 1 tuần trước'
-    },
-    specs: {
-      origin: 'Việt Nam',
-      condition: 'Mới',
-      manufacturer: 'VinFast',
-      model: 'VF8',
-      year: 2025,
-      fuel: 'Điện',
-      type: 'SUV / Cross over',
-      seats: 5,
-      weight: '> 1 tấn',
-      payload: '> 2 tấn'
-    },
-    images: [
-      require('../../assets/images/adaptive-icon.png'), // Placeholder images
-      require('../../assets/images/adaptive-icon.png'),
-      require('../../assets/images/adaptive-icon.png'),
-    ]
-  },
-  { 
-    id: 2, 
-    title: 'Ô tô điện VinFast VF8', 
-    price: '1,200,000,000 VNĐ', 
-    location: 'TP.HCM',
-    brand: 'VinFast',
-    year: 2024,
-    batteryCapacity: '87.7 kWh',
-    batteryCondition: '98%',
-    mileage: '5,000 km',
-    installmentPrice: '99.8 triệu/tháng',
-    description: 'Xe điện cao cấp với công nghệ tiên tiến, tiết kiệm năng lượng và thân thiện với môi trường.',
-    seller: {
-      name: 'Trần Thị B',
-      phone: '091234****',
-      location: 'Quận 1, TP.HCM',
-      postTime: 'Đăng 3 ngày trước'
-    },
-    specs: {
-      origin: 'Việt Nam',
-      condition: 'Mới',
-      manufacturer: 'VinFast',
-      model: 'VF8',
-      year: 2024,
-      fuel: 'Điện',
-      type: 'SUV / Cross over',
-      seats: 7,
-      weight: '> 2 tấn',
-      payload: '> 2 tấn'
-    },
-    images: [
-      require('../../assets/images/adaptive-icon.png'),
-      require('../../assets/images/adaptive-icon.png'),
-      require('../../assets/images/adaptive-icon.png'),
-    ]
-  },
-];
+type Product = {
+  _id: string;
+  title: string;
+  description?: string;
+  price: number;
+  category?: string;
+  brand?: string;
+  model?: string;
+  year?: number;
+  condition?: string;
+  images: string[];
+  seller?: { _id: string; name: string; email: string; phone?: string; avatar?: string };
+  location?: { city?: string; province?: string; address?: string } | string;
+  specifications?: {
+    batteryCapacity?: string;
+    range?: string;
+    chargingTime?: string;
+    power?: string;
+    weight?: string;
+    dimensions?: string;
+  };
+};
 
 export default function ProductDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { productId } = (route.params as { productId: number }) || { productId: 1 };
+  const { productId } = (route.params as { productId: string }) || { productId: '' };
+  const { accessToken } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const imageScrollViewRef = useRef<ScrollView>(null);
+  
+  React.useEffect(() => {
+    let mounted = true;
+    const fetchProduct = async () => {
+      setIsLoading(true);
+      setErrorText(null);
+      try {
+        const res = await fetch(`${API_URL}/api/products/${productId}`);
+        const json = await res.json();
+        const p: Product = json.product || json;
+        if (mounted) setProduct(p);
+      } catch (e) {
+        if (mounted) setErrorText('Không tải được sản phẩm');
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+    if (productId) fetchProduct();
+    return () => { mounted = false; };
+  }, [productId]);
 
-  // Find product by ID or use first product as default
-  const product = sampleProducts.find(p => p.id === productId) || sampleProducts[0];
+  const imageUrls = (product?.images || []).map((u) => ({ url: u }));
 
-  const imageUrls = product.images.map(image => ({
-    url: '',
-    props: { source: image }
-  }));
+  const formatPrice = (price?: number) => {
+    if (price === undefined || price === null) return '';
+    try {
+      return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+    } catch {
+      return `${price} VNĐ`;
+    }
+  };
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 200],
@@ -127,7 +104,7 @@ export default function ProductDetailScreen() {
   const handleCallPress = () => {
     Alert.alert(
       'Gọi điện thoại',
-      `Số điện thoại: ${product.seller.phone}\n\nBạn có muốn gọi điện cho người bán không?`,
+      `Số điện thoại: ${product?.seller?.phone || 'N/A'}\n\nBạn có muốn gọi điện cho người bán không?`,
       [
         {
           text: 'Hủy',
@@ -136,7 +113,7 @@ export default function ProductDetailScreen() {
         {
           text: 'Gọi ngay',
           onPress: () => {
-            const phoneUrl = `tel:${product.seller.phone.replace(/\*/g, '')}`;
+            const phoneUrl = `tel:${(product?.seller?.phone || '').replace(/\*/g, '')}`;
             Linking.openURL(phoneUrl).catch(err => {
               Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi');
             });
@@ -146,27 +123,74 @@ export default function ProductDetailScreen() {
     );
   };
 
-  const handleChatPress = () => {
-    // Navigate directly to chat screen
-    (navigation as any).navigate('Chat');
+  const handleChatPress = async () => {
+    try {
+      if (!product?._id || !product?.seller?._id) {
+        Alert.alert('Lỗi', 'Thiếu thông tin sản phẩm hoặc người bán');
+        return;
+      }
+      const res = await fetch(`${API_URL}/api/chat/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ productId: product._id, sellerId: product.seller._id }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      const raw = await res.text();
+      let data: any;
+      try {
+        data = contentType.includes('application/json') ? JSON.parse(raw) : JSON.parse(raw);
+      } catch {
+        throw new Error(raw?.slice(0, 200) || 'Server returned non-JSON');
+      }
+      if (!res.ok) {
+        throw new Error(data?.message || 'Không thể bắt đầu cuộc trò chuyện');
+      }
+      const conversationId = data.conversationId || data._id || data.id || data.conversation?._id;
+      try {
+        await AsyncStorage.setItem('pending_conversation_id', conversationId || '');
+        await AsyncStorage.setItem('pending_conversation_peer_name', product.seller?.name || '');
+      } catch {}
+      (navigation as any).navigate('Chat', { conversationId, peerName: product.seller?.name });
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể mở chat');
+    }
   };
 
   const handlePhonePress = () => {
-    const phoneUrl = `tel:${product.seller.phone.replace(/\*/g, '')}`;
+    const phoneUrl = `tel:${(product?.seller?.phone || '').replace(/\*/g, '')}`;
     Linking.openURL(phoneUrl).catch(err => {
       Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi');
     });
   };
 
-  const handleZaloPress = () => {
-    // In a real app, this would open Zalo
-    console.log('Opening Zalo chat');
-  };
+
 
   const handleImagePress = (index: number) => {
     setCurrentImageIndex(index);
     setIsImageViewerVisible(true);
   };
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ padding: 16 }}>Đang tải sản phẩm...</Text>
+      </View>
+    );
+  }
+
+  if (errorText || !product) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity style={{ padding: 16 }} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={{ paddingHorizontal: 16, color: '#d00' }}>{errorText || 'Không tìm thấy sản phẩm'}</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -244,13 +268,19 @@ export default function ProductDetailScreen() {
             onScroll={handleImageScroll}
             scrollEventThrottle={16}
           >
-            {product.images.map((image, index) => (
+            {(product.images && product.images.length > 0 ? product.images : [null]).map((image, index) => (
               <TouchableOpacity 
                 key={index} 
                 style={styles.imageSlide}
                 onPress={() => handleImagePress(index)}
               >
-                <Image source={image} style={styles.productImage} resizeMode="cover" />
+                {image ? (
+                  <Image source={{ uri: image }} style={styles.productImage} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.productImage, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <Ionicons name="image-outline" size={48} color="#bbb" />
+                  </View>
+                )}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -258,7 +288,7 @@ export default function ProductDetailScreen() {
           {/* Image Counter */}
           <View style={styles.imageCounter}>
             <Text style={styles.imageCounterText}>
-              {currentImageIndex + 1}/{product.images.length}
+              {Math.min(currentImageIndex + 1, product.images?.length || 1)}/{product.images?.length || 1}
             </Text>
           </View>
 
@@ -279,18 +309,14 @@ export default function ProductDetailScreen() {
         {/* Product Info */}
         <View style={styles.productInfo}>
           <Text style={styles.productTitle}>{product.title}</Text>
-          <Text style={styles.productPrice}>{product.price}</Text>
-          <Text style={styles.installmentPrice}>
-            (Trả góp từ {product.installmentPrice})
-          </Text>
+          <Text style={styles.productPrice}>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</Text>
           
           {/* Key Features */}
           <View style={styles.featuresContainer}>
             <Text style={styles.sectionTitle}>Mô tả chi tiết</Text>
-            <Text style={styles.featuresSubtitle}>Đẳng cấp đến từ sự khác biệt</Text>
             
             <View style={styles.featuresList}>
-              {product.description.split('\n\n').map((feature, index) => (
+              {(product.description ? product.description.split('\n\n') : []).map((feature, index) => (
                 <View key={index} style={styles.featureItem}>
                   <Ionicons name="diamond" size={12} color="#4A90E2" style={styles.featureIcon} />
                   <Text style={styles.featureText}>{feature}</Text>
@@ -301,15 +327,16 @@ export default function ProductDetailScreen() {
 
           {/* Seller Contact */}
           <View style={styles.sellerContainer}>
-            <Text style={styles.sectionTitle}>Thông tin liên hệ</Text>
+            <Text style={styles.sectionTitle}>Thông tin người bán</Text>
             <View style={styles.sellerInfo}>
               <View style={styles.sellerDetails}>
-                <Text style={styles.sellerName}>{product.seller.name}</Text>
+                <Text style={styles.sellerName}>{product.seller?.name || 'Người bán'}</Text>
                 <TouchableOpacity onPress={handlePhonePress}>
-                  <Text style={styles.sellerPhone}>{product.seller.phone}</Text>
+                  <Text style={styles.sellerPhone}>{product.seller?.phone || '---'}</Text>
                 </TouchableOpacity>
-                <Text style={styles.sellerLocation}>{product.seller.location}</Text>
-                <Text style={styles.postTime}>{product.seller.postTime}</Text>
+                <Text style={styles.sellerLocation}>
+                  {typeof product.location === 'string' ? product.location : `${product.location?.address || ''}${product.location?.city ? `, ${product.location.city}` : ''}${product.location?.province ? `, ${product.location.province}` : ''}`}
+                </Text>
               </View>
               <TouchableOpacity style={styles.chatIconButton} onPress={handleChatPress}>
                 <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
@@ -323,55 +350,71 @@ export default function ProductDetailScreen() {
             <Text style={styles.sectionTitle}>Thông số chi tiết</Text>
             
             <View style={styles.specSection}>
-              <Text style={styles.specSectionTitle}>Tình trạng xe</Text>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Xuất xứ</Text>
-                <Text style={styles.specValue}>{product.specs.origin}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Tình trạng</Text>
-                <Text style={styles.specValue}>{product.specs.condition}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Chính sách bảo hành</Text>
-                <Text style={styles.specValue}>Bảo hành hãng</Text>
-              </View>
+              <Text style={styles.specSectionTitle}>Tổng quan</Text>
+              {!!product.brand && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Thương hiệu</Text>
+                  <Text style={styles.specValue}>{product.brand}</Text>
+                </View>
+              )}
+              {!!product.model && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Mẫu</Text>
+                  <Text style={styles.specValue}>{product.model}</Text>
+                </View>
+              )}
+              {!!product.year && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Năm</Text>
+                  <Text style={styles.specValue}>{product.year}</Text>
+                </View>
+              )}
+              {!!product.condition && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Tình trạng</Text>
+                  <Text style={styles.specValue}>{product.condition}</Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.specSection}>
               <Text style={styles.specSectionTitle}>Thông số kỹ thuật</Text>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Hãng xe</Text>
-                <Text style={styles.specValue}>{product.specs.manufacturer}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Dòng xe</Text>
-                <Text style={styles.specValue}>{product.specs.model}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Năm sản xuất</Text>
-                <Text style={styles.specValue}>{product.specs.year}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Nhiên liệu</Text>
-                <Text style={styles.specValue}>{product.specs.fuel}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Kiểu dáng</Text>
-                <Text style={styles.specValue}>{product.specs.type}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Số chỗ</Text>
-                <Text style={styles.specValue}>{product.specs.seats}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Trọng lượng</Text>
-                <Text style={styles.specValue}>{product.specs.weight}</Text>
-              </View>
-              <View style={styles.specRow}>
-                <Text style={styles.specLabel}>Trọng tải</Text>
-                <Text style={styles.specValue}>{product.specs.payload}</Text>
-              </View>
+              {!!product.specifications?.batteryCapacity && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Dung lượng pin</Text>
+                  <Text style={styles.specValue}>{product.specifications.batteryCapacity}</Text>
+                </View>
+              )}
+              {!!product.specifications?.range && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Quãng đường</Text>
+                  <Text style={styles.specValue}>{product.specifications.range}</Text>
+                </View>
+              )}
+              {!!product.specifications?.chargingTime && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Thời gian sạc</Text>
+                  <Text style={styles.specValue}>{product.specifications.chargingTime}</Text>
+                </View>
+              )}
+              {!!product.specifications?.power && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Công suất</Text>
+                  <Text style={styles.specValue}>{product.specifications.power}</Text>
+                </View>
+              )}
+              {!!product.specifications?.weight && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Khối lượng</Text>
+                  <Text style={styles.specValue}>{product.specifications.weight}</Text>
+                </View>
+              )}
+              {!!product.specifications?.dimensions && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Kích thước</Text>
+                  <Text style={styles.specValue}>{product.specifications.dimensions}</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -380,20 +423,6 @@ export default function ProductDetailScreen() {
           <View style={styles.bottomSpacing} />
         </View>
       </Animated.ScrollView>
-
-      {/* Bottom Action Buttons */}
-      <View style={styles.bottomActions}>
-        <TouchableOpacity style={styles.chatButton} onPress={handleChatPress}>
-          <Text style={styles.chatButtonText}>Chat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.zaloButton} onPress={handleZaloPress}>
-          <Text style={styles.zaloButtonText}>Zalo</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.callButton} onPress={handleCallPress}>
-          <Ionicons name="call" size={20} color="#fff" style={styles.callIcon} />
-          <Text style={styles.callButtonText}>Gọi</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }

@@ -1,9 +1,12 @@
+// @ts-nocheck
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import React, { useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
+  DeviceEventEmitter,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -17,47 +20,192 @@ import {
   View
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import API_URL from '../../config/api';
+import { useAuth } from '../AuthContext';
 
 export default function ChatScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
+  const { accessToken, user } = useAuth();
+  const routeParams: any = (route.params as any) || {};
+  const initialConversationId = routeParams.conversationId || routeParams?.params?.conversationId;
+  const peerName = routeParams.peerName || routeParams?.params?.peerName;
   const [selectedChat, setSelectedChat] = useState(null);
   const [newMessage, setNewMessage] = useState('');
-  const [chatMessages, setChatMessages] = useState({});
+  const [chatMessages, setChatMessages] = useState<any>({});
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const flatListRef = useRef(null);
 
-  // Mock chat data
-  const chatList = [
-    {
-      id: 1,
-      name: 'Nguyễn Văn A',
-      lastMessage: 'Xe còn không bạn?',
-      time: '14:30',
-      unread: 2,
-      avatar: 'A',
-      online: true,
-      product: 'Xe máy điện VinFast Klara A2'
-    },
-    {
-      id: 2,
-      name: 'Trần Thị B',
-      lastMessage: 'Giá này có thương lượng được không?',
-      time: '12:15',
-      unread: 0,
-      avatar: 'B',
-      online: false,
-      product: 'Pin xe máy điện Lithium 60V'
-    },
-    {
-      id: 3,
-      name: 'Lê Văn C',
-      lastMessage: 'Tôi muốn xem xe trực tiếp',
-      time: '10:45',
-      unread: 1,
-      avatar: 'C',
-      online: true,
-      product: 'Ô tô điện VinFast VF8'
+  // Conversations mapped to list items
+  const chatList = conversations.map((c: any) => ({
+    id: c._id,
+    name: c.peer?.name || 'Người dùng',
+    lastMessage: c.lastMessage?.text || '',
+    time: (c.lastMessage?.createdAt || c.lastMessage?.sentAt)
+      ? new Date(c.lastMessage.createdAt || c.lastMessage.sentAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      : '',
+    unread: c.unread || 0,
+    avatar: (c.peer?.name || 'U')[0]?.toUpperCase() || 'U',
+    online: false,
+    product: (c.product?.title || c.productId?.title || ''),
+  }));
+
+  // Calculate total unread count for tab badge
+  const totalUnreadCount = conversations.reduce((total, c) => total + (c.unread || 0), 0);
+
+  const authHeaders = () => ({
+    'Content-Type': 'application/json',
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  });
+
+  const loadConversations = async () => {
+    setIsLoadingList(true);
+    try {
+      const res = await fetch(`${API_URL}/api/chat`, { headers: authHeaders() });
+      const contentType = res.headers.get('content-type') || '';
+      const raw = await res.text();
+      const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
+      const items = Array.isArray((data as any).items) ? (data as any).items : (Array.isArray(data) ? data : []);
+      const normalized = items.map((c: any) => {
+        const isBuyer = c?.buyerId?._id === user?._id;
+        const peer = isBuyer ? c?.sellerId : c?.buyerId;
+        const product = c?.productId;
+        // Calculate unread count based on lastMessage sender
+        const lastMessageSender = c?.lastMessage?.sentBy || c?.lastMessage?.senderId;
+        const isLastMessageFromMe = lastMessageSender === user?._id;
+        const unreadCount = isLastMessageFromMe ? 0 : (c?.unreadCount || 1);
+        
+        return {
+          _id: c?._id,
+          peer,
+          lastMessage: c?.lastMessage || {},
+          product,
+          unread: unreadCount,
+        };
+      });
+      setConversations(normalized);
+      // Emit total unread count for bottom tab badge
+      const totalUnread = normalized.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+      DeviceEventEmitter.emit('chat_unread_count', totalUnread);
+    } catch (e) {
+      // ignore
+    } finally {
+      setIsLoadingList(false);
     }
-  ];
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadConversations();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const openConversation = async (convId: string, fallbackName?: string) => {
+    // Optimistically open the conversation UI even if fetching messages fails
+    const found = conversations.find((c: any) => c._id === convId);
+    const peerNameSafe = found?.peer?.name || fallbackName || 'Chat';
+    const productTitle = (found?.product?.title || found?.productId?.title || '');
+    setSelectedChat({
+      id: convId,
+      name: peerNameSafe,
+      avatar: (peerNameSafe || 'U')[0]?.toUpperCase() || 'U',
+      online: false,
+      product: productTitle,
+    });
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+    
+    // Mark conversation as read when opening
+    setConversations((prev: any[]) => {
+      const updated = prev.map((c: any) => c._id === convId ? { ...c, unread: 0 } : c);
+      const totalUnread = updated.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+      DeviceEventEmitter.emit('chat_unread_count', totalUnread);
+      return updated;
+    });
+    try {
+      const urls = [
+        `${API_URL}/api/chat/${convId}/messages?page=1&limit=50`,
+      ];
+      let lastErr: any = null;
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, { headers: authHeaders() });
+          const contentType = res.headers.get('content-type') || '';
+          const raw = await res.text();
+          const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
+          const list = Array.isArray((data as any).items) ? (data as any).items : (Array.isArray(data) ? data : (data.messages || []));
+          setChatMessages((prev: any) => ({ ...prev, [convId]: list.map((m: any, idx: number) => ({
+            id: m._id || idx + 1,
+            text: m.text,
+            sender: (m.isMine !== undefined) ? (m.isMine ? 'me' : 'other') : (m.senderId === user?._id ? 'me' : 'other'),
+            time: (m.createdAt || m.sentAt) ? new Date(m.createdAt || m.sentAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '',
+          })) }));
+          setTimeout(() => { if (flatListRef.current) (flatListRef.current as any).scrollToEnd({ animated: true }); }, 50);
+          return;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      if (lastErr) throw lastErr;
+    } catch (e) {
+      // Keep UI open; messages will be empty or previously cached
+    }
+  };
+
+  useEffect(() => {
+    loadConversations();
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      // Refresh conversations when screen gains focus
+      loadConversations();
+      if (initialConversationId) {
+        openConversation(initialConversationId, peerName);
+      }
+      // Fallback: check pending id in storage in case params missing
+      (async () => {
+        if (!initialConversationId && !selectedChat) {
+          try {
+            const pendingId = await AsyncStorage.getItem('pending_conversation_id');
+            const pendingName = await AsyncStorage.getItem('pending_conversation_peer_name');
+            if (pendingId) {
+              openConversation(pendingId, pendingName || 'Chat');
+              await AsyncStorage.removeItem('pending_conversation_id');
+              await AsyncStorage.removeItem('pending_conversation_peer_name');
+            }
+          } catch {}
+        }
+      })();
+      return () => {};
+    }, [initialConversationId, peerName])
+  );
+
+  // Ensure opening chat detail immediately if params are present
+  useEffect(() => {
+    if (initialConversationId && !selectedChat) {
+      const name = peerName || 'Chat';
+      setSelectedChat({
+        id: initialConversationId,
+        name,
+        avatar: (name || 'U')[0]?.toUpperCase() || 'U',
+        online: false,
+        product: '',
+      });
+      // fetch messages in background
+      openConversation(initialConversationId, peerName);
+    }
+  }, [initialConversationId, peerName, selectedChat]);
+
+  useEffect(() => {
+    if (initialConversationId) {
+      openConversation(initialConversationId, peerName);
+    }
+  }, [initialConversationId]);
 
   // Initialize default messages for each chat
   const initializeMessages = () => {
@@ -134,32 +282,51 @@ export default function ChatScreen() {
     return chatMessages[selectedChat.id] || [];
   };
 
-  const sendMessage = () => {
-    if (newMessage.trim() && selectedChat) {
-      const currentMessages = chatMessages[selectedChat.id] || [];
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !selectedChat) return;
+    const convId = (selectedChat as any).id || (selectedChat as any)._id;
+    const text = newMessage.trim();
+    try {
+      const res = await fetch(`${API_URL}/api/chat/messages`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ conversationId: convId, text }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      const raw = await res.text();
+      const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
+      const serverMsg = data.message || data;
       const message = {
-        id: currentMessages.length + 1,
-        text: newMessage.trim(),
+        id: serverMsg?._id || ((chatMessages[convId]?.length || 0) + 1),
+        text: serverMsg?.text || text,
         sender: 'me',
-        time: new Date().toLocaleTimeString('vi-VN', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })
+        time: serverMsg?.createdAt ? new Date(serverMsg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
       };
-      
-      setChatMessages(prev => ({
+      setChatMessages((prev: any) => ({
         ...prev,
-        [selectedChat.id]: [...currentMessages, message]
+        [convId]: [ ...(prev[convId] || []), message ],
       }));
-      
+      // Update conversations list: set lastMessage and move to top
+      setConversations((prev: any[]) => {
+        const updated = prev.map((c: any) => c._id === convId ? ({
+          ...c,
+          lastMessage: {
+            ...(c.lastMessage || {}),
+            text: serverMsg?.text || text,
+            sentAt: serverMsg?.createdAt || serverMsg?.sentAt || new Date().toISOString(),
+            sentBy: user?._id,
+          },
+        }) : c);
+        const getTime = (c: any) => new Date((c.lastMessage && (c.lastMessage.sentAt || c.lastMessage.createdAt)) || c.updatedAt || 0).getTime();
+        const sorted = [...updated].sort((a, b) => getTime(b) - getTime(a));
+        const totalUnread = sorted.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+        DeviceEventEmitter.emit('chat_unread_count', totalUnread);
+        return sorted;
+      });
       setNewMessage('');
-      
-      // Auto scroll to bottom after sending
-      setTimeout(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({ animated: true });
-        }
-      }, 10);
+      setTimeout(() => { if (flatListRef.current) (flatListRef.current as any).scrollToEnd({ animated: true }); }, 10);
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không gửi được tin nhắn');
     }
   };
 
@@ -188,16 +355,17 @@ export default function ChatScreen() {
     </View>
   );
 
-  const renderChatItem = ({ item }) => (
+  const renderChatItem = ({ item }: any) => (
     <TouchableOpacity 
       style={styles.chatItem}
       onPress={() => {
-        initializeMessages();
-        setSelectedChat(item);
-        // Hide bottom navigation
-        navigation.getParent()?.setOptions({
-          tabBarStyle: { display: 'none' }
-        });
+        if (item?.id) {
+          openConversation(item.id, item.name);
+        } else {
+          initializeMessages();
+          setSelectedChat(item);
+          navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+        }
       }}
     >
       <View style={styles.avatarContainer}>
@@ -436,6 +604,8 @@ export default function ChatScreen() {
           keyExtractor={item => item.id.toString()}
           style={styles.chatList}
           showsVerticalScrollIndicator={false}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
         />
       )}
     </SafeAreaView>
@@ -516,7 +686,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     justifyContent: 'space-around',
-    alignItems: 'space-around',
+    alignItems: 'center',
     flexWrap: 'wrap',
   },
   colorDot: {

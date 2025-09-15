@@ -10,14 +10,32 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import API_URL from '../../config/api';
+import { useAuth } from '../AuthContext';
 
 interface AccountScreenProps {
   onLogout: () => void;
 }
 
+type MenuItem = {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  hasArrow: boolean;
+  badge?: string;
+  isLogout?: boolean;
+  action?: string;
+  subtitle?: string;
+};
+
+type MenuSection = {
+  section?: string;
+  items: MenuItem[];
+};
+
 export default function AccountScreen({ onLogout }: AccountScreenProps) {
   const navigation = useNavigation();
-  const menuItems = [
+  const { user, accessToken, logout } = useAuth();
+  const menuItems: MenuSection[] = [
     {
       section: 'Tiện ích',
       items: [
@@ -35,7 +53,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
       section: 'Khác',
       items: [
         { icon: 'time', title: 'Lịch sử giao dịch', hasArrow: true },
-        { icon: 'settings', title: 'Cài đặt tài khoản', hasArrow: true },
+        { icon: 'settings', title: 'Cài đặt địa chỉ', hasArrow: true, action: 'open_profile' },
         { icon: 'desktop', title: 'Quản lý lịch sử đăng nhập', hasArrow: true },
         { icon: 'headset', title: 'Trợ giúp', hasArrow: true },
         { icon: 'chatbubbles', title: 'Đóng góp ý kiến', hasArrow: true },
@@ -44,22 +62,42 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     }
   ];
 
-  const handleMenuItemPress = (item) => {
+  const handleMenuItemPress = (item: MenuItem) => {
     if (item.action === 'logout') {
       Alert.alert(
         'Đăng xuất',
         'Bạn có chắc chắn muốn đăng xuất?',
         [
           { text: 'Hủy', style: 'cancel' },
-          { text: 'Đăng xuất', style: 'destructive', onPress: onLogout }
+          { text: 'Đăng xuất', style: 'destructive', onPress: async () => {
+              try {
+                await fetch(`${API_URL}/api/auth/logout`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                  },
+                  body: JSON.stringify({}),
+                });
+              } catch (e) {
+                // ignore network errors on logout
+              } finally {
+                await logout();
+                onLogout();
+              }
+            } }
         ]
       );
     } else {
-      Alert.alert('Thông báo', `Tính năng "${item.title}" sẽ được phát triển trong tương lai`);
+      if (item.action === 'open_profile') {
+        (navigation as any).navigate('Profile');
+      } else {
+        Alert.alert('Thông báo', `Tính năng "${item.title}" sẽ được phát triển trong tương lai`);
+      }
     }
   };
 
-  const renderMenuItem = (item, index) => (
+  const renderMenuItem = (item: MenuItem, index: number) => (
     <TouchableOpacity 
       key={index} 
       style={styles.menuItem}
@@ -98,7 +136,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     </TouchableOpacity>
   );
 
-  const renderSection = (section, index) => (
+  const renderSection = (section: MenuSection, index: number) => (
     <View key={index} style={styles.section}>
       {section.section && (
         <Text style={styles.sectionTitle}>{section.section}</Text>
@@ -138,7 +176,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
             </View>
             
             <View style={styles.profileDetails}>
-              <Text style={styles.profileName}>Thành Tài</Text>
+              <Text style={styles.profileName}>{user?.name || 'Người dùng'}</Text>
               
               <View style={styles.userInfo}>
                 <View style={styles.infoRow}>

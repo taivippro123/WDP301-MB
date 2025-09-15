@@ -75,10 +75,11 @@ export default function RegisterScreen({ onRegister, onBackToLogin }: RegisterSc
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          fullName: formData.fullName,
-          phone: formData.phone,
+          name: formData.fullName,
           email: formData.email,
           password: formData.password,
+          phone: formData.phone,
+          role: 'customer',
         }),
       });
 

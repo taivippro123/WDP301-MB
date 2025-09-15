@@ -8,10 +8,11 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import React, { useState } from 'react';
-import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, DeviceEventEmitter, Text, TouchableOpacity, View } from 'react-native';
 import AuthProvider, { useAuth } from './AuthContext';
 import AccountScreen from './screens/AccountScreen';
+import AddressSettingScreen from './screens/AddressSettingScreen';
 import ChatScreen from './screens/ChatScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
@@ -103,7 +104,7 @@ function ProtectedScreen({ children, screenName, navigation }: { children: React
     }
     return (
       <LoginScreen 
-        onLogin={login} 
+        onLogin={() => {}}
         onNavigateToRegister={() => setShowRegister(true)}
         onBackToHome={() => navigation.navigate('Trang chủ')}
         showBackButton={true}
@@ -117,6 +118,14 @@ function ProtectedScreen({ children, screenName, navigation }: { children: React
 // Main App with Authentication
 function AppContent() {
   const { isAuthenticated, login, logout } = useAuth();
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('chat_unread_count', (count: number) => {
+      if (typeof count === 'number') setChatUnreadCount(count);
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <Tab.Navigator
@@ -220,7 +229,7 @@ function AppContent() {
           </ProtectedScreen>
         )}
       </Tab.Screen>
-      <Tab.Screen name="Chat">
+      <Tab.Screen name="Chat" options={{ tabBarBadge: chatUnreadCount > 0 ? chatUnreadCount : undefined }}>
         {({ navigation }) => (
           <ProtectedScreen screenName="Chat" navigation={navigation}>
             <ChatStack />
@@ -235,6 +244,7 @@ function AppContent() {
                 {() => <AccountScreen onLogout={logout} />}
               </Stack.Screen>
               <Stack.Screen name="TopUp" component={TopUpScreen} />
+              <Stack.Screen name="Profile" component={AddressSettingScreen} />
             </Stack.Navigator>
           </ProtectedScreen>
         )}

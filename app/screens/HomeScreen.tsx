@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Image,
   Keyboard,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -11,17 +13,22 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import API_URL from '../../config/api';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [activeTab, setActiveTab] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [products, setProducts] = useState<any[]>([]);
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const compactOpacity = useRef(new Animated.Value(0)).current;
-  const searchInputRef = useRef(null);
-  const compactSearchInputRef = useRef(null);
+  const searchInputRef = useRef<TextInput | null>(null);
+  const compactSearchInputRef = useRef<TextInput | null>(null);
   
   const categories = [
     { id: 1, name: 'Xe máy\nđiện', icon: 'bicycle-outline' },
@@ -36,140 +43,37 @@ export default function HomeScreen() {
     { id: 10, name: 'Bảo hiểm\nxe điện', icon: 'shield-checkmark-outline' },
   ];
 
-  const products = [
-    { 
-      id: 1, 
-      title: 'Xe máy điện VinFast Klara A2', 
-      price: '35,000,000 VNĐ', 
-      location: 'Hà Nội',
-      brand: 'VinFast',
-      year: 2023,
-      batteryCapacity: '48V 20Ah',
-      batteryCondition: '95%',
-      mileage: '1,200 km'
-    },
-    { 
-      id: 2, 
-      title: 'Ô tô điện VinFast VF8', 
-      price: '1,200,000,000 VNĐ', 
-      location: 'TP.HCM',
-      brand: 'VinFast',
-      year: 2024,
-      batteryCapacity: '87.7 kWh',
-      batteryCondition: '98%',
-      mileage: '5,000 km'
-    },
-    { 
-      id: 3, 
-      title: 'Pin xe máy điện Lithium 60V 32Ah', 
-      price: '8,500,000 VNĐ', 
-      location: 'Đà Nẵng',
-      brand: 'Samsung',
-      year: 2023,
-      batteryCapacity: '60V 32Ah',
-      batteryCondition: '90%',
-      mileage: 'N/A'
-    },
-    { 
-      id: 4, 
-      title: 'Xe đạp điện Yamaha PAS', 
-      price: '18,000,000 VNĐ', 
-      location: 'Hà Nội',
-      brand: 'Yamaha',
-      year: 2022,
-      batteryCapacity: '36V 15Ah',
-      batteryCondition: '85%',
-      mileage: '3,500 km'
-    },
-    { 
-      id: 5, 
-      title: 'Xe máy điện Honda PCX Electric', 
-      price: '75,000,000 VNĐ', 
-      location: 'Hà Nội',
-      brand: 'Honda',
-      year: 2024,
-      batteryCapacity: '50.4V 30Ah',
-      batteryCondition: '100%',
-      mileage: '500 km'
-    },
-    { 
-      id: 6, 
-      title: 'Pin ô tô điện Tesla Model 3', 
-      price: '450,000,000 VNĐ', 
-      location: 'TP.HCM',
-      brand: 'Tesla',
-      year: 2023,
-      batteryCapacity: '75 kWh',
-      batteryCondition: '92%',
-      mileage: 'N/A'
-    },
-    { 
-      id: 7, 
-      title: 'Xe tải điện Hyundai Porter Electric', 
-      price: '850,000,000 VNĐ', 
-      location: 'Đà Nẵng',
-      brand: 'Hyundai',
-      year: 2023,
-      batteryCapacity: '72.6 kWh',
-      batteryCondition: '96%',
-      mileage: '8,000 km'
-    },
-    { 
-      id: 8, 
-      title: 'Xe đạp điện Giant Explore E+', 
-      price: '45,000,000 VNĐ', 
-      location: 'Hải Phòng',
-      brand: 'Giant',
-      year: 2023,
-      batteryCapacity: '36V 17.5Ah',
-      batteryCondition: '88%',
-      mileage: '2,800 km'
-    },
-    { 
-      id: 9, 
-      title: 'Pin xe máy điện LiFePO4 72V 40Ah', 
-      price: '12,500,000 VNĐ', 
-      location: 'Cần Thơ',
-      brand: 'BYD',
-      year: 2024,
-      batteryCapacity: '72V 40Ah',
-      batteryCondition: '100%',
-      mileage: 'N/A'
-    },
-    { 
-      id: 10, 
-      title: 'Xe máy điện Pega Cap A Plus', 
-      price: '28,000,000 VNĐ', 
-      location: 'Vũng Tàu',
-      brand: 'Pega',
-      year: 2022,
-      batteryCapacity: '60V 28Ah',
-      batteryCondition: '85%',
-      mileage: '4,200 km'
-    },
-    { 
-      id: 11, 
-      title: 'Ô tô điện BYD Tang EV', 
-      price: '1,890,000,000 VNĐ', 
-      location: 'Hà Nội',
-      brand: 'BYD',
-      year: 2024,
-      batteryCapacity: '108.8 kWh',
-      batteryCondition: '99%',
-      mileage: '2,500 km'
-    },
-    { 
-      id: 12, 
-      title: 'Xe đạp điện Merida eONE-SIXTY', 
-      price: '85,000,000 VNĐ', 
-      location: 'TP.HCM',
-      brand: 'Merida',
-      year: 2023,
-      batteryCapacity: '36V 21Ah',
-      batteryCondition: '94%',
-      mileage: '1,800 km'
-    },
-  ];
+  const fetchProducts = async (isRefresh = false) => {
+    if (isRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setErrorText(null);
+    try {
+      const url = `${API_URL}/api/products`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (json.products ?? []);
+      setProducts(list);
+    } catch (e) {
+      setErrorText('Không tải được danh sách sản phẩm');
+    } finally {
+      if (isRefresh) {
+        setIsRefreshing(false);
+      } else {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const onRefresh = () => {
+    fetchProducts(true);
+  };
 
   const tabs = ['Dành cho bạn', 'Gần bạn', 'Mới nhất'];
 
@@ -178,7 +82,7 @@ export default function HomeScreen() {
   const HEADER_MIN_HEIGHT = 70; // Chiều cao compact search
   const SCROLL_THRESHOLD = 120;
 
-  const handleScroll = (event) => {
+  const handleScroll = (event: any) => {
     const currentScrollY = event.nativeEvent.contentOffset.y;
     const shouldShowCompact = currentScrollY > SCROLL_THRESHOLD;
     
@@ -216,6 +120,16 @@ export default function HomeScreen() {
   const clearSearch = () => {
     setSearchText('');
     dismissKeyboard();
+  };
+
+  const formatPrice = (price?: number | string) => {
+    if (price === undefined || price === null) return '';
+    if (typeof price === 'string') return price;
+    try {
+      return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+    } catch {
+      return `${price} VNĐ`;
+    }
   };
 
   return (
@@ -348,6 +262,16 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              colors={['#FFD700']}
+              tintColor="#FFD700"
+              title="Đang cập nhật..."
+              titleColor="#000"
+            />
+          }
         >
         {/* Categories */}
         <View style={styles.categoriesContainer}>
@@ -378,29 +302,44 @@ export default function HomeScreen() {
 
         {/* Products Grid */}
         <View style={styles.productsContainer}>
-          {products.map((product) => (
+          {isLoading && (
+            <Text style={{ padding: 16, color: '#666' }}>Đang tải sản phẩm...</Text>
+          )}
+          {errorText && !isLoading && (
+            <Text style={{ padding: 16, color: '#d00' }}>{errorText}</Text>
+          )}
+          {!isLoading && !errorText && products.map((product) => (
             <TouchableOpacity 
-              key={product.id} 
+              key={product._id || product.id} 
               style={styles.productItem}
-              onPress={() => (navigation as any).navigate('ProductDetail', { productId: product.id })}
+              onPress={() => (navigation as any).navigate('ProductDetail', { productId: product._id || product.id })}
             >
               <View style={styles.productImage}>
-                <Ionicons name="image-outline" size={40} color="#ccc" />
+                {product.images && product.images.length > 0 ? (
+                  <Image source={{ uri: product.images[0] }} style={{ width: '100%', height: '100%', borderRadius: 8 }} />
+                ) : (
+                  <Ionicons name="image-outline" size={40} color="#ccc" />
+                )}
               </View>
               <View style={styles.productInfo}>
                 <Text style={styles.productTitle} numberOfLines={2}>
                   {product.title}
                 </Text>
-                <Text style={styles.productPrice}>{product.price}</Text>
+                <Text style={styles.productPrice}>{formatPrice(product.price)}</Text>
                 <View style={styles.productDetails}>
-                  <Text style={styles.productDetail}>{product.brand} • {product.year}</Text>
-                  <Text style={styles.productDetail}>Pin: {product.batteryCapacity}</Text>
-                  <Text style={styles.productDetail}>Tình trạng: {product.batteryCondition}</Text>
-                  {product.mileage !== 'N/A' && (
-                    <Text style={styles.productDetail}>Đã đi: {product.mileage}</Text>
+                  {(product.brand || product.year) && (
+                    <Text style={styles.productDetail}>{product.brand}{product.year ? ` • ${product.year}` : ''}</Text>
+                  )}
+                  {product.specifications?.batteryCapacity && (
+                    <Text style={styles.productDetail}>Pin: {product.specifications.batteryCapacity}</Text>
+                  )}
+                  {product.condition && (
+                    <Text style={styles.productDetail}>Tình trạng: {product.condition}</Text>
                   )}
                 </View>
-                <Text style={styles.productLocation}>{product.location}</Text>
+                <Text style={styles.productLocation}>
+                  {product.location?.city || product.location || ''}
+                </Text>
               </View>
               <TouchableOpacity style={styles.favoriteButton}>
                 <Ionicons name="heart-outline" size={20} color="#999" />

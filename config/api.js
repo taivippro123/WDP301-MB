@@ -1,3 +1,3 @@
-const API_URL = 'https://b5c2465af62f.ngrok-free.app'
+const API_URL = 'https://electric-vehicle-marketplace.onrender.com'
 
 export default API_URL;
