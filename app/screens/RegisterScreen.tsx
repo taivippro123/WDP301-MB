@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import API_URL from '../../config/api';
 
 interface RegisterScreenProps {
   onRegister: () => void;
@@ -44,7 +45,7 @@ export default function RegisterScreen({ onRegister, onBackToLogin }: RegisterSc
 
   const passwordValidation = validatePassword(formData.password);
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!formData.fullName || !formData.phone || !formData.email || !formData.password) {
       Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin bắt buộc');
       return;
@@ -60,9 +61,64 @@ export default function RegisterScreen({ onRegister, onBackToLogin }: RegisterSc
       return;
     }
 
-    Alert.alert('Thành công', 'Đăng ký tài khoản thành công!', [
-      { text: 'OK', onPress: onRegister }
-    ]);
+    // Validate password requirements
+    const validation = validatePassword(formData.password);
+    if (!validation.length || !validation.uppercase || !validation.lowercase || !validation.number) {
+      Alert.alert('Lỗi', 'Mật khẩu không đáp ứng đủ yêu cầu');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fullName: formData.fullName,
+          phone: formData.phone,
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Registration successful
+        Alert.alert('Thành công', 'Đăng ký tài khoản thành công!', [
+          { text: 'OK', onPress: onRegister }
+        ]);
+      } else {
+        // Registration failed - handle specific error messages
+        let errorMessage = 'Đăng ký thất bại. Vui lòng thử lại.';
+        
+        if (data.message) {
+          const message = data.message.toLowerCase();
+          if (message.includes('validation failed')) {
+            errorMessage = 'Thông tin đăng ký không hợp lệ. Vui lòng kiểm tra lại.';
+          } else if (message.includes('email already exists') || message.includes('email already taken')) {
+            errorMessage = 'Email này đã được sử dụng. Vui lòng chọn email khác.';
+          } else if (message.includes('phone already exists') || message.includes('phone already taken')) {
+            errorMessage = 'Số điện thoại này đã được sử dụng. Vui lòng chọn số khác.';
+          } else if (message.includes('invalid email')) {
+            errorMessage = 'Định dạng email không hợp lệ.';
+          } else if (message.includes('password too weak') || message.includes('weak password')) {
+            errorMessage = 'Mật khẩu quá yếu. Vui lòng chọn mật khẩu mạnh hơn.';
+          } else if (message.includes('invalid phone')) {
+            errorMessage = 'Số điện thoại không hợp lệ.';
+          } else {
+            errorMessage = data.message;
+          }
+        }
+        
+        Alert.alert('Lỗi đăng ký', errorMessage);
+      }
+    } catch (error) {
+      // Network or other error
+      Alert.alert('Lỗi', 'Có lỗi xảy ra khi đăng ký. Vui lòng thử lại.');
+      console.error('Register error:', error);
+    }
   };
 
   return (

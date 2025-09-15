@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Keyboard,
   SafeAreaView,
@@ -11,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import API_URL from '../../config/api';
 
 interface LoginScreenProps {
   onLogin: (isAuthenticated: boolean) => void;
@@ -26,22 +28,67 @@ export default function LoginScreen({ onLogin, onNavigateToRegister, onBackToHom
     rememberPassword: false
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const updateFormData = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!formData.phoneOrEmail || !formData.password) {
       Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
       return;
     }
 
-    // Check admin credentials
-    if (formData.phoneOrEmail !== 'admin' && formData.password !== 'admin') {
-     Alert.alert('Lỗi', 'Tên đăng nhập hoặc mật khẩu không đúng');
-    } else {
-      onLogin(true);
+    // Đóng bàn phím và bắt đầu loading
+    Keyboard.dismiss();
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.phoneOrEmail,
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Login successful
+        setIsLoading(false);
+        onLogin(true);
+      } else {
+        // Login failed - handle specific error messages
+        let errorMessage = 'Tên đăng nhập hoặc mật khẩu không đúng';
+        
+        if (data.message) {
+          const message = data.message.toLowerCase();
+          if (message.includes('invalid credentials')) {
+            errorMessage = 'Tên đăng nhập hoặc mật khẩu không đúng';
+          } else if (message.includes('validation failed')) {
+            errorMessage = 'Thông tin đăng nhập không hợp lệ';
+          } else if (message.includes('user not found')) {
+            errorMessage = 'Tài khoản không tồn tại';
+          } else if (message.includes('account locked') || message.includes('account disabled')) {
+            errorMessage = 'Tài khoản đã bị khóa';
+          } else {
+            errorMessage = data.message;
+          }
+        }
+        
+        setIsLoading(false);
+        Alert.alert('Lỗi đăng nhập', errorMessage);
+      }
+    } catch (error) {
+      // Network or other error
+      setIsLoading(false);
+      Alert.alert('Lỗi', 'Có lỗi xảy ra khi đăng nhập. Vui lòng thử lại.');
+      console.error('Login error:', error);
     }
   };
 
@@ -125,8 +172,19 @@ export default function LoginScreen({ onLogin, onNavigateToRegister, onBackToHom
         </TouchableOpacity>
 
         {/* Login Button */}
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.loginButtonText}>Đăng nhập</Text>
+        <TouchableOpacity 
+          style={[styles.loginButton, isLoading && styles.loginButtonDisabled]} 
+          onPress={handleLogin}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <View style={styles.loginButtonContent}>
+              <ActivityIndicator size="small" color="#000" style={styles.spinner} />
+              <Text style={styles.loginButtonText}>Đang đăng nhập...</Text>
+            </View>
+          ) : (
+            <Text style={styles.loginButtonText}>Đăng nhập</Text>
+          )}
         </TouchableOpacity>
 
         {/* Or Divider */}
@@ -288,6 +346,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 24,
+  },
+  loginButtonDisabled: {
+    backgroundColor: '#F0F0F0',
+    opacity: 0.7,
+  },
+  loginButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spinner: {
+    marginRight: 8,
   },
   loginButtonText: {
     fontSize: 16,
