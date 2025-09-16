@@ -23,6 +23,7 @@ import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import TopUpScreen from './screens/TopUpScreen';
 import WishlistScreen from './screens/WishlistScreen';
+import OrderHistory from './screens/OrderHistory';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -245,6 +246,7 @@ function AppContent() {
               </Stack.Screen>
               <Stack.Screen name="TopUp" component={TopUpScreen} />
               <Stack.Screen name="Profile" component={AddressSettingScreen} />
+              <Stack.Screen name="OrderHistory" component={OrderHistory} />
             </Stack.Navigator>
           </ProtectedScreen>
         )}

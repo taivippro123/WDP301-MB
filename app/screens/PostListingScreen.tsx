@@ -32,13 +32,15 @@ export default function PostListingScreen() {
         model: '',
         year: '',
         condition: 'new',
+        length: '',
+        width: '',
+        height: '',
+        weight: '',
         specifications: {
             batteryCapacity: '',
             range: '',
             chargingTime: '',
             power: '',
-            weight: '',
-            dimensions: '',
             batteryType: '',
             voltage: '',
             capacity: '',
@@ -48,79 +50,29 @@ export default function PostListingScreen() {
             compatibility: ''
         }
     });
-    const [selectedImages, setSelectedImages] = useState<string[]>([]);
-    const [uploadingImages, setUploadingImages] = useState(false);
+    const [selectedMedia, setSelectedMedia] = useState<any[]>([]);
+    const [submitting, setSubmitting] = useState(false);
+    const [errors, setErrors] = useState<Record<string, string>>({});
 
     const updateFormData = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
+        setErrors(prev => ({ ...prev, [field]: '' }));
     };
 
-    const uploadProductImages = async (imageUris: string[]) => {
-        setUploadingImages(true);
-        try {
-            const formData = new FormData();
-            
-            // Add each image file to FormData
-            imageUris.forEach((uri, index) => {
-                formData.append('files', {
-                    uri: uri,
-                    type: 'image/jpeg',
-                    name: `product_${index}.jpg`,
-                } as any);
-            });
-
-            console.log('Uploading images:', imageUris);
-
-            const response = await fetch(`${API_URL}/api/upload/product`, {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-                },
-                body: formData,
-            });
-            if (response.status === 401) {
-                await logout();
-                return;
-            }
-
-            console.log('Upload response status:', response.status);
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.log('Upload error response:', errorText);
-                throw new Error(`Upload failed with status ${response.status}: ${errorText}`);
-            }
-            
-            const result = await response.json();
-            console.log('Upload response data:', result);
-            
-            // Handle different possible response formats
-            let urls = [];
-            if (result.urls) {
-                urls = result.urls;
-            } else if (result.files) {
-                urls = result.files;
-            } else if (Array.isArray(result)) {
-                urls = result;
-            } else if (result.data && Array.isArray(result.data)) {
-                urls = result.data;
-            } else {
-                console.log('Unexpected response format:', result);
-                throw new Error('Định dạng phản hồi không hợp lệ');
-            }
-            
-            setSelectedImages(urls);
-            Alert.alert('Thành công', `Đã tải lên ${urls.length} ảnh`);
-        } catch (error: any) {
-            console.log('Upload error:', error);
-            Alert.alert('Lỗi', error.message || 'Không thể tải lên ảnh');
-        } finally {
-            setUploadingImages(false);
-        }
+    const guessMimeFromUri = (uri: string, fallback: 'image' | 'video') => {
+        const lower = (uri || '').toLowerCase();
+        if (lower.endsWith('.png')) return 'image/png';
+        if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+        if (lower.endsWith('.heic')) return 'image/heic';
+        if (lower.endsWith('.webp')) return 'image/webp';
+        if (lower.endsWith('.gif')) return 'image/gif';
+        if (lower.endsWith('.mp4')) return 'video/mp4';
+        if (lower.endsWith('.mov')) return 'video/quicktime';
+        if (fallback === 'video') return 'video/mp4';
+        return 'image/jpeg';
     };
 
-    const pickImages = async () => {
+    const pickMedia = async () => {
         try {
             const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (permissionResult.granted === false) {
@@ -129,16 +81,26 @@ export default function PostListingScreen() {
             }
 
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
                 allowsMultipleSelection: true,
                 quality: 0.8,
                 selectionLimit: 10,
             });
 
             if (!result.canceled && result.assets.length > 0) {
-                const uris = result.assets.map(asset => asset.uri);
-                console.log('Selected images:', uris);
-                await uploadProductImages(uris);
+                const picked = result.assets.map((asset, index) => {
+                    const kind = (asset.type as any) === 'video' ? 'video' : 'image';
+                    const mime = (asset as any).mimeType || guessMimeFromUri(asset.uri, kind);
+                    const nameBase = kind === 'video' ? 'video' : 'image';
+                    return {
+                        uri: asset.uri,
+                        type: kind,
+                        mime,
+                        name: `${nameBase}_${Date.now()}_${index}.${mime.includes('/') ? mime.split('/')[1] : 'bin'}`,
+                    };
+                });
+                console.log('Selected media:', picked);
+                setSelectedMedia(picked);
             }
         } catch (error) {
             console.log('Image picker error:', error);
@@ -146,9 +108,9 @@ export default function PostListingScreen() {
         }
     };
 
-    const removeImage = (index: number) => {
-        const newImages = selectedImages.filter((_, i) => i !== index);
-        setSelectedImages(newImages);
+    const removeMedia = (index: number) => {
+        const newItems = selectedMedia.filter((_, i) => i !== index);
+        setSelectedMedia(newItems);
     };
 
     const handleSubmit = async () => {
@@ -162,53 +124,106 @@ export default function PostListingScreen() {
             Alert.alert('Lỗi', 'Giá không hợp lệ');
             return;
         }
-        // Use only uploaded images
-        const images = selectedImages;
-        
-        console.log('Images to send to API:', images);
-        
-        if (images.length === 0) {
-            Alert.alert('Lỗi', 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm');
+        // Dimensions and weight (required by server)
+        const lengthNum = Number(formData.length);
+        const widthNum = Number(formData.width);
+        const heightNum = Number(formData.height);
+        const weightNum = Number(formData.weight);
+        if ([lengthNum, widthNum, heightNum, weightNum].some((v) => Number.isNaN(v))) {
+            Alert.alert('Lỗi', 'Kích thước/khối lượng không hợp lệ');
             return;
         }
-        const payload: any = {
-            title: formData.title,
-            description: formData.description,
-            price: priceNum,
-            category: formData.category,
-            brand: formData.brand || undefined,
-            model: formData.model || undefined,
-            year: yearNum || undefined,
-            condition: formData.condition,
-            images,
-            specifications: { ...formData.specifications },
-        };
+        if (lengthNum < 1 || lengthNum > 200 || widthNum < 1 || widthNum > 200 || heightNum < 1 || heightNum > 200) {
+            Alert.alert('Lỗi', 'Chiều dài/rộng/cao phải trong khoảng 1-200 cm');
+            return;
+        }
+        if (weightNum < 1 || weightNum > 1600000) {
+            Alert.alert('Lỗi', 'Khối lượng (gram) phải trong khoảng 1 - 1,600,000');
+            return;
+        }
+        if (selectedMedia.length === 0) {
+            Alert.alert('Lỗi', 'Vui lòng chọn ít nhất 1 ảnh hoặc video sản phẩm');
+            return;
+        }
+
+        const form = new FormData();
+        form.append('title', formData.title);
+        if (formData.description) form.append('description', formData.description);
+        form.append('price', String(priceNum));
+        form.append('category', formData.category);
+        if (formData.brand) form.append('brand', formData.brand);
+        if (formData.model) form.append('model', formData.model);
+        if (yearNum) form.append('year', String(yearNum));
+        form.append('condition', formData.condition);
+        // Required dims/weight
+        form.append('length', String(lengthNum));
+        form.append('width', String(widthNum));
+        form.append('height', String(heightNum));
+        form.append('weight', String(weightNum));
+        // Send specs as optional JSON string field
         try {
-            console.log('Sending product payload:', payload);
+            const specKeys = Object.keys(formData.specifications || {});
+            const hasAnySpec = specKeys.some(k => (formData.specifications as any)[k]);
+            if (hasAnySpec) {
+                form.append('specifications', JSON.stringify(formData.specifications));
+            }
+        } catch {}
+
+        selectedMedia.forEach((item, index) => {
+            form.append('files', {
+                uri: item.uri,
+                type: item.mime,
+                name: item.name || `media_${index}`,
+            } as any);
+        });
+
+        try {
+            setSubmitting(true);
+            setErrors({});
+            console.log('Sending product multipart with media count:', selectedMedia.length);
             const res = await fetch(`${API_URL}/api/products`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
                 },
-                body: JSON.stringify(payload),
+                body: form,
             });
             if (res.status === 401) {
                 await logout();
-            return;
-        }
+                return;
+            }
             const raw = await res.text();
             console.log('Product creation response status:', res.status);
             console.log('Product creation response:', raw);
             let data: any = {};
             try { data = raw ? JSON.parse(raw) : {}; } catch {}
             if (!res.ok) {
+                // Map zod issues -> field errors
+                if (res.status === 400) {
+                    const details = Array.isArray(data?.details) ? data.details : [];
+                    if (details.length > 0) {
+                        const mapped: Record<string, string> = {};
+                        details.forEach((iss: any) => {
+                            const path = Array.isArray(iss?.path) && iss.path.length ? iss.path[0] : '';
+                            const key = typeof path === 'string' ? path : '';
+                            if (key && !mapped[key]) mapped[key] = iss?.message || 'Trường không hợp lệ';
+                        });
+                        setErrors(mapped);
+                    }
+                    const msg = data?.error || 'Dữ liệu không hợp lệ';
+                    Alert.alert('Lỗi', msg);
+                    return;
+                }
                 throw new Error(data?.message || data?.error || 'Không thể tạo sản phẩm');
             }
+            // Success: data is the created product object
             Alert.alert('Thành công', 'Tin đăng đã được tạo thành công');
         } catch (e: any) {
             console.log('Product creation error:', e);
             Alert.alert('Lỗi', e?.message || 'Có lỗi xảy ra');
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -275,19 +290,22 @@ export default function PostListingScreen() {
         Keyboard.dismiss();
     };
 
-    const renderInput = (label, value, onChange, required = false, keyboardType = 'default', placeholder) => (
+    const renderInput = (label, value, onChange, required = false, keyboardType = 'default', placeholder, errorKey?: string) => (
         <View style={styles.inputGroup}>
             <Text style={styles.label}>
                 {label} {required && <Text style={styles.required}>*</Text>}
             </Text>
             <TextInput
-                style={styles.input}
+                style={[styles.input, errors[errorKey || ''] ? { borderColor: '#FF3333' } : null]}
                 placeholder={placeholder || label}
                 placeholderTextColor="#999"
                 value={value}
                 onChangeText={onChange}
                 keyboardType={keyboardType}
             />
+            {!!(errorKey && errors[errorKey]) && (
+                <Text style={styles.errorText}>{errors[errorKey]}</Text>
+            )}
         </View>
     );
 
@@ -328,16 +346,23 @@ export default function PostListingScreen() {
                                 <Text style={styles.imageInfoText}>Hình ảnh hợp lệ (tối đa 10 ảnh)</Text>
                             </View>
                             
-                            {selectedImages.length > 0 ? (
+                            {selectedMedia.length > 0 ? (
                                 <View style={styles.imageGrid}>
                                     <FlatList
-                                        data={selectedImages}
+                                        data={selectedMedia}
                                         renderItem={({ item, index }) => (
                                             <View style={styles.imageItem}>
-                                                <Image source={{ uri: item }} style={styles.uploadedImage} />
+                                                {item.type === 'image' ? (
+                                                    <Image source={{ uri: item.uri }} style={styles.uploadedImage} />
+                                                ) : (
+                                                    <View style={[styles.uploadedImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' }]}>
+                                                        <Ionicons name="videocam" size={28} color="#FFD700" />
+                                                        <Text style={{ color: '#fff', marginTop: 6, fontSize: 12 }}>Video</Text>
+                                                    </View>
+                                                )}
                                                 <TouchableOpacity 
                                                     style={styles.removeImageButton}
-                                                    onPress={() => removeImage(index)}
+                                                    onPress={() => removeMedia(index)}
                                                 >
                                                     <Ionicons name="close" size={16} color="#fff" />
                                                 </TouchableOpacity>
@@ -351,36 +376,37 @@ export default function PostListingScreen() {
                             ) : null}
                             
                             <TouchableOpacity 
-                                style={[styles.imageUpload, uploadingImages && styles.uploadingButton]} 
-                                onPress={pickImages}
-                                disabled={uploadingImages}
+                                style={[styles.imageUpload, submitting && styles.uploadingButton]} 
+                                onPress={pickMedia}
+                                disabled={submitting}
                             >
-                                {uploadingImages ? (
+                                {submitting ? (
                                     <Ionicons name="cloud-upload" size={48} color="#FFD700" />
                                 ) : (
                                 <Ionicons name="camera" size={48} color="#FFD700" />
                                 )}
                                 <Text style={styles.imageUploadText}>
-                                    {uploadingImages ? 'ĐANG TẢI LÊN...' : 'CHỌN ẢNH SẢN PHẨM'}
+                                    {submitting ? 'ĐANG GỬI...' : 'CHỌN ẢNH/VIDEO SẢN PHẨM'}
                                 </Text>
                             </TouchableOpacity>
                         </View>
 
                         {/* Core Fields */}
                         <View style={styles.section}>
-                            {renderInput('Tên sản phẩm', formData.title, (t) => updateFormData('title', t), true, 'default', 'VD: Xe điện VinFast VF5/Pin Lithium 48V')}
-                            {renderInput('Mô tả chi tiết', formData.description, (t) => updateFormData('description', t), false, 'default', 'VD: Xe điện tốc độ 70 km/h...')}
+                            {renderInput('Tên sản phẩm', formData.title, (t) => updateFormData('title', t), true, 'default', 'VD: Xe điện VinFast VF5/Pin Lithium 48V', 'title')}
+                            {renderInput('Mô tả chi tiết', formData.description, (t) => updateFormData('description', t), false, 'default', 'VD: Xe điện tốc độ 70 km/h...', 'description')}
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>Giá bán (VNĐ) <Text style={styles.required}>*</Text></Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <TextInput
-                                        style={[styles.input, { flex: 1 }]}
+                                        style={[styles.input, { flex: 1 }, errors.price ? { borderColor: '#FF3333' } : null]}
                                         placeholder="Nhập giá bán"
                                         placeholderTextColor="#999"
                                         value={String(formData.price)}
                                         onChangeText={(t) => updateFormData('price', t)}
                                         keyboardType="numeric"
                                     />
+                                    {!!errors.price && <Text style={styles.errorText}>{errors.price}</Text>}
                                     <TouchableOpacity 
                                         style={[styles.aiButton, { height: 44 }]} 
                                         onPress={handleAIPriceSuggestion}
@@ -391,6 +417,15 @@ export default function PostListingScreen() {
                                 </View>
                             </View>
                             
+                            {/* Dimensions & Weight (required) */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Kích thước & Khối lượng <Text style={styles.required}>*</Text></Text>
+                                {renderInput('Chiều dài (cm)', String(formData.length), (t) => updateFormData('length', t), true, 'numeric', 'VD: 150', 'length')}
+                                {renderInput('Chiều rộng (cm)', String(formData.width), (t) => updateFormData('width', t), true, 'numeric', 'VD: 60', 'width')}
+                                {renderInput('Chiều cao (cm)', String(formData.height), (t) => updateFormData('height', t), true, 'numeric', 'VD: 90', 'height')}
+                                {renderInput('Khối lượng (gram)', String(formData.weight), (t) => updateFormData('weight', t), true, 'numeric', 'VD: 50000', 'weight')}
+                            </View>
+
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>Loại sản phẩm <Text style={styles.required}>*</Text></Text>
                                 <View style={styles.categoryButtons}>
@@ -409,9 +444,9 @@ export default function PostListingScreen() {
                             </View>
                         </View>
 
-                            {renderInput('Thương hiệu', formData.brand, (t) => updateFormData('brand', t), false, 'default', 'VD: VinFast, Tesla, CATL...')}
-                            {renderInput('Model sản phẩm', formData.model, (t) => updateFormData('model', t), false, 'default', 'VD: VF5, Evo200, LFP-48V...')}
-                            {renderInput('Năm sản xuất', formData.year, (t) => updateFormData('year', t), false, 'numeric', 'VD: 2023')}
+                            {renderInput('Thương hiệu', formData.brand, (t) => updateFormData('brand', t), false, 'default', 'VD: VinFast, Tesla, CATL...', 'brand')}
+                            {renderInput('Model sản phẩm', formData.model, (t) => updateFormData('model', t), false, 'default', 'VD: VF5, Evo200, LFP-48V...', 'model')}
+                            {renderInput('Năm sản xuất', formData.year, (t) => updateFormData('year', t), false, 'numeric', 'VD: 2023', 'year')}
 
                             <Text style={styles.label}>Tình trạng <Text style={styles.required}>*</Text></Text> 
                             <View style={styles.conditionButtons}>
@@ -428,6 +463,7 @@ export default function PostListingScreen() {
                                     <Text style={[styles.conditionText, formData.condition === 'used' && styles.activeConditionText]}>Đã qua sử dụng</Text>
                                 </TouchableOpacity>
                             </View>
+                            {!!errors.condition && <Text style={styles.errorText}>{errors.condition}</Text>}
                            
                         </View>
 
@@ -451,8 +487,7 @@ export default function PostListingScreen() {
                                     {renderInput('Quãng đường', formData.specifications.range, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, range: t } })), false, 'default', 'VD: 203 km')}
                                     {renderInput('Thời gian sạc', formData.specifications.chargingTime, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, chargingTime: t } })), false, 'default', 'VD: 6-7 giờ')}
                                     {renderInput('Công suất', formData.specifications.power, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, power: t } })), false, 'default', 'VD: 2,500 W')}
-                                    {renderInput('Khối lượng', formData.specifications.weight, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, weight: t } })), false, 'default', 'VD: 95 kg')}
-                                    {renderInput('Kích thước', formData.specifications.dimensions, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, dimensions: t } })), false, 'default', 'VD: 1,800 x 700 x 1,130 mm')}
+                                   
                                 </>
                             )}
                             
@@ -460,8 +495,6 @@ export default function PostListingScreen() {
                             {formData.category === 'battery' && (
                                 <>
                                     {renderInput('Thời gian sạc', formData.specifications.chargingTime, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, chargingTime: t } })), false, 'default', 'VD: 6-7 giờ (nếu có)')}
-                                    {renderInput('Khối lượng', formData.specifications.weight, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, weight: t } })), false, 'default', 'VD: 25 kg')}
-                                    {renderInput('Kích thước', formData.specifications.dimensions, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, dimensions: t } })), false, 'default', 'VD: 400 x 250 x 180 mm')}
                                 </>
                             )}
                             </View>

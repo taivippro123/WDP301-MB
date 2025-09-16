@@ -14,6 +14,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import API_URL from '../../config/api';
@@ -55,6 +56,10 @@ export default function ProductDetailScreen() {
   const [product, setProduct] = useState<Product | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [isFeeModalVisible, setIsFeeModalVisible] = useState(false);
+  const [shippingFee, setShippingFee] = useState<number>(0);
+  const [isCalculatingFee, setIsCalculatingFee] = useState(false);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
   const imageScrollViewRef = useRef<ScrollView>(null);
   
@@ -111,21 +116,240 @@ export default function ProductDetailScreen() {
       'Gọi điện thoại',
       `Số điện thoại: ${product?.seller?.phone || 'N/A'}\n\nBạn có muốn gọi điện cho người bán không?`,
       [
-        {
-          text: 'Hủy',
-          style: 'cancel'
-        },
+        { text: 'Hủy', style: 'cancel' },
         {
           text: 'Gọi ngay',
           onPress: () => {
             const phoneUrl = `tel:${(product?.seller?.phone || '').replace(/\*/g, '')}`;
-            Linking.openURL(phoneUrl).catch(err => {
+            Linking.openURL(phoneUrl).catch(() => {
               Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi');
             });
           }
         }
       ]
     );
+  };
+
+  const handlePhonePress = () => {
+    const phoneUrl = `tel:${(product?.seller?.phone || '').replace(/\*/g, '')}`;
+    Linking.openURL(phoneUrl).catch(() => {
+      Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi');
+    });
+  };
+
+  const fetchBuyerAddress = async (): Promise<any | null> => {
+    try {
+      const cached: any = (user as any)?.profile?.address;
+      if (cached?.districtCode && cached?.wardCode) return cached;
+      if (!accessToken) return null;
+      const res = await fetch(`${API_URL}/api/profile/profile`, {
+        headers: { 'Accept': 'application/json', Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json?.profile?.address || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleBuyPress = async () => {
+    try {
+      if (isCalculatingFee || isCreatingOrder) return;
+      setIsCalculatingFee(true);
+      if (!product) return;
+      const sellerAddr: any = (product as any)?.seller?.profile?.address || (product as any)?.seller?.address;
+      let buyerAddr: any = (user as any)?.profile?.address;
+      if (!buyerAddr?.districtCode || !buyerAddr?.wardCode) {
+        buyerAddr = await fetchBuyerAddress();
+      }
+      if (!sellerAddr?.districtCode || !sellerAddr?.wardCode) {
+        Alert.alert('Lỗi', 'Thiếu địa chỉ người bán (mã quận/huyện hoặc phường/xã).');
+        return;
+      }
+      if (!buyerAddr?.districtCode || !buyerAddr?.wardCode) {
+        Alert.alert('Lỗi', 'Vui lòng cập nhật địa chỉ của bạn trong hồ sơ trước khi mua.');
+        return;
+      }
+
+      const payload = {
+        service_type_id: 2,
+        from_district_id: Number(sellerAddr.districtCode) || 0,
+        from_ward_code: String(sellerAddr.wardCode || ''),
+        to_district_id: Number(buyerAddr.districtCode) || 0,
+        to_ward_code: String(buyerAddr.wardCode || ''),
+        length: (product as any)?.length || 30,
+        width: (product as any)?.width || 40,
+        height: (product as any)?.height || 20,
+        weight: (product as any)?.weight || 3000,
+        insurance_value: 0,
+        cod_value: 0,
+        coupon: null as any
+      };
+
+      const res = await fetch(`${API_URL}/api/shipping/fee`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
+      const raw = await res.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch {}
+      if (!res.ok) {
+        const msg = data?.error || data?.message || (typeof data === 'string' ? data : 'Không tính được phí ship');
+        throw new Error(msg);
+      }
+      const feeData = data?.data || data;
+      const totalFee = Number(feeData?.total ?? feeData?.service_fee ?? feeData?.fee ?? 0);
+      setShippingFee(totalFee);
+      setIsFeeModalVisible(true);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể tính phí vận chuyển');
+    }
+    finally {
+      setIsCalculatingFee(false);
+    }
+  };
+
+  const fetchBuyerProfile = async (): Promise<any | null> => {
+    try {
+      if (!accessToken) return null;
+      const res = await fetch(`${API_URL}/api/profile/profile`, {
+        headers: { 'Accept': 'application/json', Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const createOrder = async () => {
+    try {
+      if (!shippingFee || Number(shippingFee) <= 0) {
+        Alert.alert('Lỗi', 'Phí vận chuyển không hợp lệ. Vui lòng tính phí trước.');
+        return;
+      }
+      if (isCreatingOrder || isCalculatingFee) return;
+      setIsCreatingOrder(true);
+      if (!product) return;
+      const sellerAddr: any = (product as any)?.seller?.profile?.address || (product as any)?.seller?.address || {};
+
+      // Always refresh buyer profile to get name/phone/address
+      const profile = await fetchBuyerProfile();
+      const buyerAddr: any = profile?.profile?.address || {};
+      const to_name = (profile?.name as any) || (user as any)?.name || '';
+      const to_phone = (profile?.phone as any) || '';
+      const to_address = buyerAddr?.houseNumber || '';
+      const to_ward_name = buyerAddr?.ward || '';
+      const to_district_name = buyerAddr?.district || '';
+      const to_province_name = buyerAddr?.province || '';
+
+      // Validate required receiver fields with explicit missing list
+      const missing: string[] = [];
+      if (!to_name.trim()) missing.push('Họ tên người nhận');
+      if (!to_phone.trim()) missing.push('SĐT người nhận');
+      if (!to_address.trim()) missing.push('Địa chỉ người nhận');
+      if (!to_ward_name.trim()) missing.push('Phường/Xã người nhận');
+      if (!to_district_name.trim()) missing.push('Quận/Huyện người nhận');
+      if (!to_province_name.trim()) missing.push('Tỉnh/Thành người nhận');
+      if (missing.length > 0) {
+        Alert.alert('Thiếu thông tin', `Vui lòng bổ sung:\n- ${missing.join('\n- ')}`);
+        return;
+      }
+
+      const body: any = {
+        // Receiver (required)
+        to_name: to_name.trim(),
+        to_phone: to_phone.trim(),
+        to_address: to_address.trim(),
+        to_ward_name: to_ward_name.trim(),
+        to_district_name: to_district_name.trim(),
+        to_province_name: to_province_name.trim(),
+        // Package
+        length: (product as any)?.length || 30,
+        width: (product as any)?.width || 40,
+        height: (product as any)?.height || 20,
+        weight: (product as any)?.weight || 3000,
+        service_type_id: 2,
+        payment_type_id: 2,
+        insurance_value: 0,
+        cod_amount: 0,
+        required_note: 'KHONGCHOXEMHANG',
+        // Product content/name for GHN
+        content: (product as any)?.title || 'Hàng hóa',
+        // Commerce fields for server wallet check and order creation
+        product_id: (product as any)?._id,
+        seller_id: (product as any)?.seller?._id,
+        unit_price: Number((product as any)?.price) || 0,
+        shipping_fee: Number(shippingFee) || 0,
+        items: [
+          {
+            name: (product as any)?.title || 'Hàng hóa',
+            code: (product as any)?._id || undefined,
+            quantity: 1,
+            price: Number((product as any)?.price) || 0,
+            length: (product as any)?.length || undefined,
+            width: (product as any)?.width || undefined,
+            height: (product as any)?.height || undefined,
+            weight: (product as any)?.weight || undefined,
+            category: { level1: (product as any)?.category || undefined }
+          }
+        ],
+      };
+
+      // Sender (optional) - only include if present to avoid nulls
+      const from_name = (product as any)?.seller?.name;
+      const from_phone = (product as any)?.seller?.phone;
+      const from_address = sellerAddr?.houseNumber;
+      const from_ward_name = sellerAddr?.ward;
+      const from_district_name = sellerAddr?.district;
+      const from_province_name = sellerAddr?.province;
+      if (from_name) body.from_name = from_name;
+      if (from_phone) body.from_phone = from_phone;
+      if (from_address) body.from_address = from_address;
+      if (from_ward_name) body.from_ward_name = from_ward_name;
+      if (from_district_name) body.from_district_name = from_district_name;
+      if (from_province_name) body.from_province_name = from_province_name;
+
+      const res = await fetch(`${API_URL}/api/shipping/order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
+      const raw = await res.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch {}
+      if (!res.ok) {
+        const msg = data?.error || data?.message || (typeof data === 'string' ? data : 'Không thể tạo đơn hàng');
+        throw new Error(msg);
+      }
+      const order = data?.data || data;
+      setIsFeeModalVisible(false);
+      Alert.alert('Thành công', `Đã tạo đơn hàng. Mã: ${order?.order_code || order?.data?.order_code || 'N/A'}`);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể tạo đơn hàng');
+    }
+    finally {
+      setIsCreatingOrder(false);
+    }
   };
 
   const handleChatPress = async () => {
@@ -168,27 +392,6 @@ export default function ProductDetailScreen() {
       Alert.alert('Lỗi', e?.message || 'Không thể mở chat');
     }
   };
-
-  const handlePhonePress = () => {
-    const phoneUrl = `tel:${(product?.seller?.phone || '').replace(/\*/g, '')}`;
-    Linking.openURL(phoneUrl).catch(err => {
-      Alert.alert('Lỗi', 'Không thể thực hiện cuộc gọi');
-    });
-  };
-
-  const handleBuyPress = () => {
-    if (!product) return;
-    Alert.alert(
-      'Mua sản phẩm',
-      `Bạn muốn mua "${product.title}" với giá ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { text: 'Xác nhận', onPress: () => Alert.alert('Thành công', 'Đơn hàng của bạn đã được tạo (demo).') }
-      ]
-    );
-  };
-
-
 
   const handleImagePress = (index: number) => {
     setCurrentImageIndex(index);
@@ -292,7 +495,7 @@ export default function ProductDetailScreen() {
             onScroll={handleImageScroll}
             scrollEventThrottle={16}
           >
-            {(product.images && product.images.length > 0 ? product.images : [null]).map((image, index) => (
+            {(((product && Array.isArray(product.images)) ? product.images : [null]) as any[]).map((image: any, index: number) => (
               <TouchableOpacity 
                 key={index} 
                 style={styles.imageSlide}
@@ -318,7 +521,7 @@ export default function ProductDetailScreen() {
 
           {/* Image Dots */}
           <View style={styles.dotsContainer}>
-            {product.images.map((_, index) => (
+            {Array.isArray(product.images) ? product.images.map((_, index) => (
               <View
                 key={index}
                 style={[
@@ -326,7 +529,7 @@ export default function ProductDetailScreen() {
                   currentImageIndex === index && styles.activeDot,
                 ]}
               />
-            ))}
+            )) : null}
           </View>
         </View>
 
@@ -446,16 +649,29 @@ export default function ProductDetailScreen() {
                   <Text style={styles.specValue}>{product.specifications.power}</Text>
                 </View>
               )}
-              {!!product.specifications?.weight && (
+              {/* Shipping dimensions/weight at top-level */}
+              {typeof (product as any)?.length === 'number' && (
                 <View style={styles.specRow}>
-                  <Text style={styles.specLabel}>Khối lượng</Text>
-                  <Text style={styles.specValue}>{product.specifications.weight}</Text>
+                  <Text style={styles.specLabel}>Chiều dài</Text>
+                  <Text style={styles.specValue}>{(product as any).length} cm</Text>
                 </View>
               )}
-              {!!product.specifications?.dimensions && (
+              {typeof (product as any)?.width === 'number' && (
                 <View style={styles.specRow}>
-                  <Text style={styles.specLabel}>Kích thước</Text>
-                  <Text style={styles.specValue}>{product.specifications.dimensions}</Text>
+                  <Text style={styles.specLabel}>Chiều rộng</Text>
+                  <Text style={styles.specValue}>{(product as any).width} cm</Text>
+                </View>
+              )}
+              {typeof (product as any)?.height === 'number' && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Chiều cao</Text>
+                  <Text style={styles.specValue}>{(product as any).height} cm</Text>
+                </View>
+              )}
+              {typeof (product as any)?.weight === 'number' && (
+                <View style={styles.specRow}>
+                  <Text style={styles.specLabel}>Khối lượng</Text>
+                  <Text style={styles.specValue}>{(product as any).weight} g</Text>
                 </View>
               )}
             </View>
@@ -466,7 +682,26 @@ export default function ProductDetailScreen() {
           <View style={styles.bottomSpacing} />
         </View>
       </Animated.ScrollView>
-      {/* Bottom buy bar removed to place Buy next to Chat */}
+      {/* Shipping fee confirmation modal */}
+      <Modal visible={isFeeModalVisible} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ width: '86%', backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#000', marginBottom: 8 }}>Xác nhận phí vận chuyển</Text>
+            <Text style={{ fontSize: 14, color: '#333', marginBottom: 16 }}>
+              Tổng phí: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(shippingFee) || 0)}
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+              <TouchableOpacity disabled={isCreatingOrder} onPress={() => setIsFeeModalVisible(false)} style={{ paddingVertical: 10, paddingHorizontal: 16, marginRight: 8, opacity: isCreatingOrder ? 0.6 : 1 }}>
+                <Text style={{ color: '#666', fontWeight: '600' }}>Hủy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity disabled={isCreatingOrder} onPress={createOrder} style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#FFD700', borderRadius: 8, flexDirection: 'row', alignItems: 'center', opacity: isCreatingOrder ? 0.7 : 1 }}>
+                {isCreatingOrder ? <ActivityIndicator size="small" color="#000" /> : null}
+                <Text style={{ color: '#000', fontWeight: '700', marginLeft: isCreatingOrder ? 8 : 0 }}>Mua</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

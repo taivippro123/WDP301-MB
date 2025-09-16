@@ -58,7 +58,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     {
       section: 'Khác',
       items: [
-        { icon: 'time', title: 'Lịch sử giao dịch', hasArrow: true },
+        { icon: 'time', title: 'Lịch sử giao dịch', hasArrow: true, action: 'open_orders' },
         { icon: 'settings', title: 'Cài đặt địa chỉ', hasArrow: true, action: 'open_profile' },
         { icon: 'desktop', title: 'Quản lý lịch sử đăng nhập', hasArrow: true },
         { icon: 'headset', title: 'Trợ giúp', hasArrow: true },
@@ -180,6 +180,8 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     } else {
       if (item.action === 'open_profile') {
         (navigation as any).navigate('Profile');
+      } else if (item.action === 'open_orders') {
+        (navigation as any).navigate('OrderHistory');
       } else {
         Alert.alert('Thông báo', `Tính năng "${item.title}" sẽ được phát triển trong tương lai`);
       }
