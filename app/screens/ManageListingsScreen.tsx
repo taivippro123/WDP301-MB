@@ -1,36 +1,52 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState, useEffect, useRef } from "react";
+import { useNavigation } from "@react-navigation/native";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Dimensions,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Dimensions,
 } from "react-native";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
   runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
 } from "react-native-reanimated";
+import API_URL from "../../config/api";
+import { useAuth } from "../AuthContext";
 
 const { width: screenWidth } = Dimensions.get("window");
 
 export default function ManageListingsScreen() {
   const [activeTab, setActiveTab] = useState(0);
   const tabsScrollViewRef = useRef<ScrollView>(null);
+  const { accessToken, logout } = useAuth();
+  const navigation = useNavigation();
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [productsByStatus, setProductsByStatus] = useState<Record<string, any[]>>({
+    active: [],
+    expired: [],
+    rejected: [],
+    draft: [],
+    pending: [],
+    hidden: [],
+  });
 
   // Tabs configuration
   const tabs = [
-    { id: 0, title: "ĐANG HIỂN THỊ", count: 3 },
-    { id: 1, title: "HẾT HẠN", count: 1 },
-    { id: 2, title: "BỊ TỪ CHỐI", count: 0 },
-    { id: 3, title: "TIN NHÁP", count: 0 },
-    { id: 4, title: "CHỜ DUYỆT", count: 0 },
-    { id: 5, title: "ĐÃ ẨN", count: 0 },
+    { id: 0, title: "ĐANG HIỂN THỊ", key: "active" },
+    { id: 1, title: "HẾT HẠN", key: "expired" },
+    { id: 2, title: "BỊ TỪ CHỐI", key: "rejected" },
+    { id: 3, title: "TIN NHÁP", key: "draft" },
+    { id: 4, title: "CHỜ DUYỆT", key: "pending" },
+    { id: 5, title: "ĐÃ ẨN", key: "hidden" },
   ];
 
   const tabLayouts = useRef<{ x: number; width: number; textWidth: number }[]>(
@@ -76,12 +92,54 @@ export default function ManageListingsScreen() {
   
   // Initialize indicator on mount
   useEffect(() => {
+    loadMyProducts();
     const initTimer = setTimeout(() => {
       updateIndicatorPosition();
     }, 100);
     
     return () => clearTimeout(initTimer);
   }, []);
+
+  const authHeaders = () => ({
+    'Accept': 'application/json',
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  });
+
+  const loadMyProducts = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`${API_URL}/api/products/my/products`, {
+        headers: authHeaders(),
+      });
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
+      const raw = await res.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch {}
+      if (!res.ok) {
+        throw new Error(data?.message || data?.error || 'Không thể tải danh sách tin đăng');
+      }
+      const items: any[] = Array.isArray(data?.products) ? data.products : [];
+      const grouped: Record<string, any[]> = { active: [], expired: [], rejected: [], draft: [], pending: [], hidden: [] };
+      items.forEach((p) => {
+        const status = p?.status as string;
+        if (status && grouped[status as keyof typeof grouped]) {
+          grouped[status].push(p);
+        } else {
+          grouped.active.push(p); // default bucket
+        }
+      });
+      setProductsByStatus(grouped);
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Có lỗi xảy ra');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Auto scroll tabs to center active tab
   const scrollToActiveTab = (tabIndex: number) => {
@@ -301,20 +359,16 @@ export default function ManageListingsScreen() {
     },
   ];
 
+  const getCountForTab = (index: number) => {
+    const key = tabs[index]?.key as keyof typeof productsByStatus;
+    if (!key) return 0;
+    return productsByStatus[key]?.length || 0;
+  };
+
   const getCurrentListings = () => {
-    switch (activeTab) {
-      case 0:
-        return listings;
-      case 1:
-        return expiredListings;
-      case 2:
-      case 3:
-      case 4:
-      case 5:
-        return [];
-      default:
-        return [];
-    }
+    const key = tabs[activeTab]?.key as keyof typeof productsByStatus;
+    if (!key) return [];
+    return productsByStatus[key] || [];
   };
 
   const renderEmptyState = () => (
@@ -348,54 +402,52 @@ export default function ManageListingsScreen() {
   });
 
   const renderListingItem = (item: any) => (
-    <View key={item.id} style={styles.listingCard}>
+    <TouchableOpacity key={item._id || item.id} style={styles.listingCard} onPress={() => {
+      const pid = item._id || item.id;
+      (navigation as any).navigate('Trang chủ' as never, { screen: 'ProductDetail', params: { productId: pid } } as never);
+    }}>
       <View style={styles.listingImage}>
-        <Ionicons name="image-outline" size={40} color="#ccc" />
+        {item?.images && item.images.length > 0 ? (
+          <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden' }}>
+            {/* @ts-ignore */}
+            <Animated.Image source={{ uri: item.images[0] }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          </View>
+        ) : (
+          <Ionicons name="image-outline" size={40} color="#ccc" />
+        )}
       </View>
 
       <View style={styles.listingInfo}>
         <Text style={styles.listingTitle} numberOfLines={2}>
           {item.title}
         </Text>
-        <Text style={styles.listingPrice}>{item.price}</Text>
-        <Text style={styles.listingLocation}>{item.location}</Text>
+        <Text style={styles.listingPrice}>{typeof item.price === 'number' ? `${item.price.toLocaleString('vi-VN')} VNĐ` : item.price}</Text>
+        {!!item.location && <Text style={styles.listingLocation}>{item.location}</Text>}
 
         <View style={styles.listingStats}>
           <View style={styles.statItem}>
             <Ionicons name="eye-outline" size={16} color="#666" />
-            <Text style={styles.statText}>{item.views}</Text>
+            <Text style={styles.statText}>{item.views || 0}</Text>
           </View>
           <View style={styles.statItem}>
             <Ionicons name="heart-outline" size={16} color="#666" />
-            <Text style={styles.statText}>{item.favorites}</Text>
+            <Text style={styles.statText}>{item.favorites || item.likes || 0}</Text>
           </View>
         </View>
 
         <View style={styles.listingDates}>
-          <Text style={styles.dateText}>{item.postedDate}</Text>
+          <Text style={styles.dateText}>{item.postedDate || new Date(item.createdAt).toLocaleDateString('vi-VN')}</Text>
           <Text
             style={[
               styles.expiryText,
               item.status === "expired" && styles.expiredText,
             ]}
           >
-            {item.expiryDate}
+            {item.expiryDate || (item.status === 'expired' ? 'Đã hết hạn' : 'Đang hiển thị')}
           </Text>
         </View>
       </View>
-
-      <View style={styles.listingActions}>
-        <TouchableOpacity style={styles.actionButton}>
-          <Ionicons name="create-outline" size={20} color="#FFD700" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton}>
-          <Ionicons name="copy-outline" size={20} color="#666" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton}>
-          <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -443,7 +495,7 @@ export default function ManageListingsScreen() {
                 ]}
                 onLayout={(e) => handleTextLayout(e, index)}
               >
-                {tab.title} ({tab.count})
+                {tab.title} ({getCountForTab(index)})
               </Text>
             </TouchableOpacity>
           ))}
@@ -464,9 +516,25 @@ export default function ManageListingsScreen() {
       >
         <Animated.View style={[styles.content, contentAnimatedStyle]}>
           <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-            {getCurrentListings().length === 0
-              ? renderEmptyState()
-              : getCurrentListings().map(renderListingItem)}
+            {isLoading ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="reload" size={24} color="#999" />
+                <Text style={styles.emptySubtitle}>Đang tải tin đăng...</Text>
+              </View>
+            ) : errorMsg ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="alert-circle-outline" size={48} color="#FF6B6B" />
+                <Text style={styles.emptyTitle}>Lỗi</Text>
+                <Text style={styles.emptySubtitle}>{errorMsg}</Text>
+                <TouchableOpacity style={styles.postButton} onPress={loadMyProducts}>
+                  <Text style={styles.postButtonText}>Thử lại</Text>
+                </TouchableOpacity>
+              </View>
+            ) : getCurrentListings().length === 0 ? (
+              renderEmptyState()
+            ) : (
+              getCurrentListings().map(renderListingItem)
+            )}
           </ScrollView>
         </Animated.View>
       </PanGestureHandler>

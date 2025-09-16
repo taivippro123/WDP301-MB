@@ -2,21 +2,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Image,
-  Keyboard,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View
+    Animated,
+    Image,
+    Keyboard,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View
 } from 'react-native';
 import API_URL from '../../config/api';
+import { useAuth } from '../AuthContext';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
+  const { logout } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [activeTab, setActiveTab] = useState(0);
@@ -53,6 +55,11 @@ export default function HomeScreen() {
     try {
       const url = `${API_URL}/api/products`;
       const res = await fetch(url);
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
       const json = await res.json();
       const list = Array.isArray(json) ? json : (json.products ?? []);
       setProducts(list);
@@ -338,7 +345,14 @@ export default function HomeScreen() {
                   )}
                 </View>
                 <Text style={styles.productLocation}>
-                  {product.location?.city || product.location || ''}
+                  {(() => {
+                    const sellerAddr = (product as any)?.seller?.address;
+                    if (sellerAddr?.province) return sellerAddr.province;
+                    const loc: any = product.location;
+                    if (loc?.province) return loc.province;
+                    if (loc?.city) return loc.city;
+                    return loc || '';
+                  })()}
                 </Text>
               </View>
               <TouchableOpacity style={styles.favoriteButton}>

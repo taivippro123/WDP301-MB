@@ -1,8 +1,11 @@
 // @ts-nocheck
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
     Alert,
+    FlatList,
+    Image,
     Keyboard,
     KeyboardAvoidingView,
     Platform,
@@ -19,7 +22,7 @@ import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
 
 export default function PostListingScreen() {
-    const { accessToken } = useAuth();
+    const { accessToken, logout } = useAuth();
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -29,7 +32,6 @@ export default function PostListingScreen() {
         model: '',
         year: '',
         condition: 'new',
-        imagesInput: '',
         specifications: {
             batteryCapacity: '',
             range: '',
@@ -46,9 +48,107 @@ export default function PostListingScreen() {
             compatibility: ''
         }
     });
+    const [selectedImages, setSelectedImages] = useState<string[]>([]);
+    const [uploadingImages, setUploadingImages] = useState(false);
 
     const updateFormData = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const uploadProductImages = async (imageUris: string[]) => {
+        setUploadingImages(true);
+        try {
+            const formData = new FormData();
+            
+            // Add each image file to FormData
+            imageUris.forEach((uri, index) => {
+                formData.append('files', {
+                    uri: uri,
+                    type: 'image/jpeg',
+                    name: `product_${index}.jpg`,
+                } as any);
+            });
+
+            console.log('Uploading images:', imageUris);
+
+            const response = await fetch(`${API_URL}/api/upload/product`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+                },
+                body: formData,
+            });
+            if (response.status === 401) {
+                await logout();
+                return;
+            }
+
+            console.log('Upload response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.log('Upload error response:', errorText);
+                throw new Error(`Upload failed with status ${response.status}: ${errorText}`);
+            }
+            
+            const result = await response.json();
+            console.log('Upload response data:', result);
+            
+            // Handle different possible response formats
+            let urls = [];
+            if (result.urls) {
+                urls = result.urls;
+            } else if (result.files) {
+                urls = result.files;
+            } else if (Array.isArray(result)) {
+                urls = result;
+            } else if (result.data && Array.isArray(result.data)) {
+                urls = result.data;
+            } else {
+                console.log('Unexpected response format:', result);
+                throw new Error('Định dạng phản hồi không hợp lệ');
+            }
+            
+            setSelectedImages(urls);
+            Alert.alert('Thành công', `Đã tải lên ${urls.length} ảnh`);
+        } catch (error: any) {
+            console.log('Upload error:', error);
+            Alert.alert('Lỗi', error.message || 'Không thể tải lên ảnh');
+        } finally {
+            setUploadingImages(false);
+        }
+    };
+
+    const pickImages = async () => {
+        try {
+            const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (permissionResult.granted === false) {
+                Alert.alert('Lỗi', 'Cần quyền truy cập thư viện ảnh');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsMultipleSelection: true,
+                quality: 0.8,
+                selectionLimit: 10,
+            });
+
+            if (!result.canceled && result.assets.length > 0) {
+                const uris = result.assets.map(asset => asset.uri);
+                console.log('Selected images:', uris);
+                await uploadProductImages(uris);
+            }
+        } catch (error) {
+            console.log('Image picker error:', error);
+            Alert.alert('Lỗi', 'Không thể chọn ảnh');
+        }
+    };
+
+    const removeImage = (index: number) => {
+        const newImages = selectedImages.filter((_, i) => i !== index);
+        setSelectedImages(newImages);
     };
 
     const handleSubmit = async () => {
@@ -62,15 +162,20 @@ export default function PostListingScreen() {
             Alert.alert('Lỗi', 'Giá không hợp lệ');
             return;
         }
-        const images = (formData.imagesInput || '')
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean);
+        // Use only uploaded images
+        const images = selectedImages;
+        
+        console.log('Images to send to API:', images);
+        
+        if (images.length === 0) {
+            Alert.alert('Lỗi', 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm');
+            return;
+        }
         const payload: any = {
             title: formData.title,
             description: formData.description,
             price: priceNum,
-            category: 'vehicle',
+            category: formData.category,
             brand: formData.brand || undefined,
             model: formData.model || undefined,
             year: yearNum || undefined,
@@ -79,6 +184,7 @@ export default function PostListingScreen() {
             specifications: { ...formData.specifications },
         };
         try {
+            console.log('Sending product payload:', payload);
             const res = await fetch(`${API_URL}/api/products`, {
                 method: 'POST',
                 headers: {
@@ -87,14 +193,21 @@ export default function PostListingScreen() {
                 },
                 body: JSON.stringify(payload),
             });
+            if (res.status === 401) {
+                await logout();
+            return;
+        }
             const raw = await res.text();
+            console.log('Product creation response status:', res.status);
+            console.log('Product creation response:', raw);
             let data: any = {};
             try { data = raw ? JSON.parse(raw) : {}; } catch {}
             if (!res.ok) {
-                throw new Error(data?.message || 'Không thể tạo sản phẩm');
+                throw new Error(data?.message || data?.error || 'Không thể tạo sản phẩm');
             }
             Alert.alert('Thành công', 'Tin đăng đã được tạo thành công');
         } catch (e: any) {
+            console.log('Product creation error:', e);
             Alert.alert('Lỗi', e?.message || 'Có lỗi xảy ra');
         }
     };
@@ -212,20 +325,53 @@ export default function PostListingScreen() {
                         <View style={styles.section}>
                             <View style={styles.imageInfo}>
                                 <Ionicons name="information-circle" size={20} color="#007AFF" />
-                                <Text style={styles.imageInfoText}>Hình ảnh hợp lệ</Text>
+                                <Text style={styles.imageInfoText}>Hình ảnh hợp lệ (tối đa 10 ảnh)</Text>
                             </View>
-                            <TouchableOpacity style={styles.imageUpload}>
+                            
+                            {selectedImages.length > 0 ? (
+                                <View style={styles.imageGrid}>
+                                    <FlatList
+                                        data={selectedImages}
+                                        renderItem={({ item, index }) => (
+                                            <View style={styles.imageItem}>
+                                                <Image source={{ uri: item }} style={styles.uploadedImage} />
+                                                <TouchableOpacity 
+                                                    style={styles.removeImageButton}
+                                                    onPress={() => removeImage(index)}
+                                                >
+                                                    <Ionicons name="close" size={16} color="#fff" />
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                        keyExtractor={(item, index) => index.toString()}
+                                        numColumns={3}
+                                        scrollEnabled={false}
+                                    />
+                            </View>
+                            ) : null}
+                            
+                            <TouchableOpacity 
+                                style={[styles.imageUpload, uploadingImages && styles.uploadingButton]} 
+                                onPress={pickImages}
+                                disabled={uploadingImages}
+                            >
+                                {uploadingImages ? (
+                                    <Ionicons name="cloud-upload" size={48} color="#FFD700" />
+                                ) : (
                                 <Ionicons name="camera" size={48} color="#FFD700" />
-                                <Text style={styles.imageUploadText}>ĐĂNG TỪ 01 ĐẾN 06 HÌNH</Text>
+                                )}
+                                <Text style={styles.imageUploadText}>
+                                    {uploadingImages ? 'ĐANG TẢI LÊN...' : 'CHỌN ẢNH SẢN PHẨM'}
+                                </Text>
                             </TouchableOpacity>
                         </View>
 
                         {/* Core Fields */}
                         <View style={styles.section}>
-                            {renderInput('Tiêu đề', formData.title, (t) => updateFormData('title', t), true, 'default', 'VD: Tesla Model 3 2023...')}
-                            {renderInput('Mô tả', formData.description, (t) => updateFormData('description', t), false, 'default', 'Mô tả chi tiết...')}
+                            {renderInput('Tên sản phẩm', formData.title, (t) => updateFormData('title', t), true, 'default', 'VD: Xe điện VinFast VF5/Pin Lithium 48V')}
+                            {renderInput('Mô tả chi tiết', formData.description, (t) => updateFormData('description', t), false, 'default', 'VD: Xe điện tốc độ 70 km/h...')}
                             <View style={styles.inputGroup}>
-                                <Text style={styles.label}>Giá (VND) <Text style={styles.required}>*</Text></Text>
+                                <Text style={styles.label}>Giá bán (VNĐ) <Text style={styles.required}>*</Text></Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <TextInput
                                         style={[styles.input, { flex: 1 }]}
@@ -244,11 +390,30 @@ export default function PostListingScreen() {
                                     </TouchableOpacity>
                                 </View>
                             </View>
-                            {renderInput('Thương hiệu', formData.brand, (t) => updateFormData('brand', t))}
-                            {renderInput('Model', formData.model, (t) => updateFormData('model', t))}
-                            {renderInput('Năm', formData.year, (t) => updateFormData('year', t), false, 'numeric')}
+                            
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Loại sản phẩm <Text style={styles.required}>*</Text></Text>
+                                <View style={styles.categoryButtons}>
+                                <TouchableOpacity
+                                        style={[styles.categoryButton, formData.category === 'vehicle' && styles.activeCategory]}
+                                        onPress={() => updateFormData('category', 'vehicle')}
+                                >
+                                        <Text style={[styles.categoryText, formData.category === 'vehicle' && styles.activeCategoryText]}>Xe điện</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                        style={[styles.categoryButton, formData.category === 'battery' && styles.activeCategory]}
+                                        onPress={() => updateFormData('category', 'battery')}
+                                >
+                                        <Text style={[styles.categoryText, formData.category === 'battery' && styles.activeCategoryText]}>Pin xe điện</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
 
-                            <Text style={styles.label}>Tình trạng</Text>
+                            {renderInput('Thương hiệu', formData.brand, (t) => updateFormData('brand', t), false, 'default', 'VD: VinFast, Tesla, CATL...')}
+                            {renderInput('Model sản phẩm', formData.model, (t) => updateFormData('model', t), false, 'default', 'VD: VF5, Evo200, LFP-48V...')}
+                            {renderInput('Năm sản xuất', formData.year, (t) => updateFormData('year', t), false, 'numeric', 'VD: 2023')}
+
+                            <Text style={styles.label}>Tình trạng <Text style={styles.required}>*</Text></Text> 
                             <View style={styles.conditionButtons}>
                                 <TouchableOpacity
                                     style={[styles.conditionButton, formData.condition === 'new' && styles.activeCondition]}
@@ -263,47 +428,49 @@ export default function PostListingScreen() {
                                     <Text style={[styles.conditionText, formData.condition === 'used' && styles.activeConditionText]}>Đã qua sử dụng</Text>
                                 </TouchableOpacity>
                             </View>
-
-                            {renderInput('Ảnh (URL, cách nhau bởi dấu phẩy)', formData.imagesInput, (t) => updateFormData('imagesInput', t), false, 'default', 'https://..., https://...')}
+                           
                         </View>
 
                         {/* Specifications */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>THÔNG SỐ KỸ THUẬT</Text>
-                            {renderInput('Dung lượng pin', formData.specifications.batteryCapacity, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, batteryCapacity: t } })))}
-                            {renderInput('Quãng đường', formData.specifications.range, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, range: t } })))}
-                            {renderInput('Thời gian sạc', formData.specifications.chargingTime, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, chargingTime: t } })))}
-                            {renderInput('Công suất', formData.specifications.power, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, power: t } })))}
-                            {renderInput('Khối lượng', formData.specifications.weight, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, weight: t } })))}
-                            {renderInput('Kích thước', formData.specifications.dimensions, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, dimensions: t } })))}
-                            {renderInput('Loại pin', formData.specifications.batteryType, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, batteryType: t } })))}
-                            {renderInput('Điện áp', formData.specifications.voltage, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, voltage: t } })))}
-                            {renderInput('Dung lượng', formData.specifications.capacity, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, capacity: t } })))}
-                            {renderInput('Chu kỳ sạc', formData.specifications.cycleLife, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, cycleLife: t } })))}
-                            {renderInput('Nhiệt độ hoạt động', formData.specifications.operatingTemperature, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, operatingTemperature: t } })))}
-                            {renderInput('Bảo hành', formData.specifications.warranty, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, warranty: t } })))}
-                            {renderInput('Tương thích', formData.specifications.compatibility, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, compatibility: t } })))}
-                        </View>
+                            
+                            {/* Common fields for both categories */}
+                            {renderInput('Dung lượng pin', formData.specifications.batteryCapacity, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, batteryCapacity: t } })), false, 'default', 'VD: 3.5 kWh')}
+                            {renderInput('Điện áp', formData.specifications.voltage, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, voltage: t } })), false, 'default', 'VD: 48V')}
+                            {renderInput('Dung lượng', formData.specifications.capacity, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, capacity: t } })), false, 'default', 'VD: 34.6 Ah')}
+                            {renderInput('Loại pin', formData.specifications.batteryType, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, batteryType: t } })), false, 'default', 'VD: LFP, NMC...')}
+                            {renderInput('Chu kỳ sạc', formData.specifications.cycleLife, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, cycleLife: t } })), false, 'default', 'VD: 2,000 chu kỳ sạc')}
+                            {renderInput('Nhiệt độ hoạt động', formData.specifications.operatingTemperature, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, operatingTemperature: t } })), false, 'default', 'VD: -10°C đến 45°C')}
+                            {renderInput('Bảo hành', formData.specifications.warranty, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, warranty: t } })), false, 'default', formData.category === 'vehicle' ? 'VD: 3 năm hoặc 30,000 km' : 'VD: 2 năm hoặc 1,000 chu kỳ')}
+                            {renderInput('Tương thích', formData.specifications.compatibility, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, compatibility: t } })), false, 'default', formData.category === 'vehicle' ? 'VD: Tương thích trạm sạc VinFast' : 'VD: Tương thích xe VinFast Evo200, xe điện 48V...')}
+                            
+                            {/* Vehicle-specific fields */}
+                            {formData.category === 'vehicle' && (
+                                <>
+                                    {renderInput('Quãng đường', formData.specifications.range, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, range: t } })), false, 'default', 'VD: 203 km')}
+                                    {renderInput('Thời gian sạc', formData.specifications.chargingTime, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, chargingTime: t } })), false, 'default', 'VD: 6-7 giờ')}
+                                    {renderInput('Công suất', formData.specifications.power, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, power: t } })), false, 'default', 'VD: 2,500 W')}
+                                    {renderInput('Khối lượng', formData.specifications.weight, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, weight: t } })), false, 'default', 'VD: 95 kg')}
+                                    {renderInput('Kích thước', formData.specifications.dimensions, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, dimensions: t } })), false, 'default', 'VD: 1,800 x 700 x 1,130 mm')}
+                                </>
+                            )}
+                            
+                            {/* Battery-specific fields */}
+                            {formData.category === 'battery' && (
+                                <>
+                                    {renderInput('Thời gian sạc', formData.specifications.chargingTime, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, chargingTime: t } })), false, 'default', 'VD: 6-7 giờ (nếu có)')}
+                                    {renderInput('Khối lượng', formData.specifications.weight, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, weight: t } })), false, 'default', 'VD: 25 kg')}
+                                    {renderInput('Kích thước', formData.specifications.dimensions, (t) => setFormData(prev => ({ ...prev, specifications: { ...prev.specifications, dimensions: t } })), false, 'default', 'VD: 400 x 250 x 180 mm')}
+                                </>
+                            )}
+                            </View>
 
                         {/* Submit */}
-                        <View style={styles.section}>
-                            <View style={styles.priceHeader}>
-                                <TouchableOpacity 
-                                    style={styles.aiButton}
-                                    onPress={handleAIPriceSuggestion}
-                                >
-                                    <Ionicons name="sparkles" size={16} color="#FF6B35" />
-                                    <Text style={styles.aiButtonText}>AI gợi ý giá</Text>
-                                </TouchableOpacity>
-                            </View>
-                            <View style={styles.buttonSection}>
-                                <TouchableOpacity style={styles.previewButton}>
-                                    <Text style={styles.previewButtonText}>Xem trước</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                                    <Text style={styles.submitButtonText}>Đăng tin</Text>
-                                </TouchableOpacity>
-                            </View>
+                        <View style={styles.section}>      
+                            <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+                                <Text style={styles.submitButtonText}>Đăng tin</Text>
+                            </TouchableOpacity>
                         </View>
 
 
@@ -359,6 +526,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         padding: 16,
         marginBottom: 8,
+        paddingBottom: 100,
     },
     sectionTitle: {
         fontSize: 14,
@@ -556,5 +724,59 @@ const styles = StyleSheet.create({
         color: '#FF6B35',
         fontWeight: '600',
         marginLeft: 4,
+    },
+    imageGrid: {
+        marginBottom: 16,
+    },
+    imageItem: {
+        position: 'relative',
+        margin: 4,
+        width: '30%',
+        aspectRatio: 1,
+    },
+    uploadedImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 8,
+    },
+    removeImageButton: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    uploadingButton: {
+        opacity: 0.7,
+    },
+    categoryButtons: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    categoryButton: {
+        flex: 1,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    activeCategory: {
+        backgroundColor: '#FFD700',
+        borderColor: '#FFD700',
+    },
+    categoryText: {
+        fontSize: 14,
+        color: '#666',
+        fontWeight: '500',
+    },
+    activeCategoryText: {
+        color: '#000',
+        fontWeight: '600',
     },
 });

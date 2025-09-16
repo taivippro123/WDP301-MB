@@ -1,26 +1,37 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import React, { useCallback, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Alert,
-    Keyboard,
-    KeyboardAvoidingView,
-    Linking,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
+import API_URL from '../../config/api';
+import { useAuth } from '../AuthContext';
 
 export default function TopUpScreen() {
   const navigation = useNavigation();
+  const { accessToken } = useAuth();
   const [coinAmount, setCoinAmount] = useState('');
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [orderUrl, setOrderUrl] = useState<string | null>(null);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [orderAmount, setOrderAmount] = useState<number | null>(null);
+  const [showPayment, setShowPayment] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
 
   // Hide bottom navigation when screen is focused
   useFocusEffect(
@@ -91,40 +102,141 @@ export default function TopUpScreen() {
       return;
     }
 
-    if (coins > 10000000) {
-      Alert.alert('Lỗi', 'Số xu tối đa là 10,000,000 xu');
+    if (coins > 50000000) {
+      Alert.alert('Lỗi', 'Số xu tối đa là 50,000,000 xu');
       return;
     }
 
-    Alert.alert(
-      'Xác nhận nạp xu',
-      `Bạn sắp nạp ${formatCurrency(coinAmount)} xu\nSố tiền: ${formatCurrency(coinAmount)} VNĐ\n\nXác nhận thanh toán qua ZaloPay?`,
-      [
-        {
-          text: 'Hủy',
-          style: 'cancel'
+    try {
+      setCreating(true);
+      const res = await fetch(`${API_URL}/api/zalopay/create-order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
-        {
-          text: 'Thanh toán',
-          onPress: () => openZaloPaySandbox(coins, vndAmount)
-        }
-      ]
-    );
+        body: JSON.stringify({ amount: vndAmount, description: 'Nạp xu vào ví' }),
+      });
+      const raw = await res.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch {}
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.message || 'Không tạo được đơn hàng');
+      }
+      const url = data?.data?.order_url;
+      if (!url) throw new Error('Không có order_url');
+      setOrderUrl(url);
+      setOrderId(data?.data?.orderId || null);
+      setOrderAmount(Number(data?.data?.amount) || vndAmount);
+      setShowPayment(true);
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể tạo đơn hàng');
+    } finally {
+      setCreating(false);
+    }
   };
 
+  useEffect(() => {
+    let mounted = true;
+    const fetchWallet = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/profile/wallet`, {
+          headers: {
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          }
+        });
+        const raw = await res.text();
+        let data: any = {};
+        try { data = raw ? JSON.parse(raw) : {}; } catch {}
+        const bal = data?.wallet?.balance ?? data?.balance ?? 0;
+        if (mounted) setWalletBalance(Number(bal) || 0);
+      } catch {}
+    };
+    fetchWallet();
+    return () => { mounted = false; };
+  }, [accessToken]);
+
+  // Poll order status every 3s when orderId is available
+  useEffect(() => {
+    if (!orderId) return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 40; // ~2 minutes
+
+    const timer = setInterval(async () => {
+      try {
+        attempts += 1;
+        const res = await fetch(`${API_URL}/api/zalopay/order/${orderId}/status`, {
+          headers: {
+            'Accept': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          }
+        });
+        const raw = await res.text();
+        let data: any = {};
+        try { data = raw ? JSON.parse(raw) : {}; } catch {}
+        const status = data?.data?.status || data?.status;
+        if (!cancelled && (status === 'success' || status === 'paid' || status === 'completed')) {
+          clearInterval(timer);
+          setShowPayment(false);
+          setOrderId(null);
+          Alert.alert(
+            'Thành công',
+            'Thanh toán thành công. Số xu sẽ được cộng vào ví.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // Quay lại màn hình tài khoản trong stack hiện tại
+                  (navigation as any).goBack();
+                }
+              }
+            ]
+          );
+          // Update wallet balance locally
+          if (orderAmount) setWalletBalance(prev => (prev || 0) + orderAmount!);
+        }
+        if (attempts >= maxAttempts) {
+          clearInterval(timer);
+        }
+      } catch {
+        // ignore transient errors
+      }
+    }, 3000);
+
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [orderId, accessToken, orderAmount]);
+
   const openZaloPaySandbox = async () => {
-    const zaloPayUrl = "zalopay://"; // chỉ mở app, không cần token
-  
     try {
-      const canOpen = await Linking.canOpenURL(zaloPayUrl);
-      if (canOpen) {
-        await Linking.openURL(zaloPayUrl);
+      const schemes = ['zalopaysb://app', 'zalopay://'];
+      for (const scheme of schemes) {
+        const can = await Linking.canOpenURL(scheme);
+        if (can) {
+          // If we already have an orderUrl, try to pass the token into the sandbox app
+          if (orderUrl) {
+            let token = '';
+            try {
+              const urlObj = new URL(orderUrl);
+              const tokenParam = urlObj.searchParams.get('order');
+              token = tokenParam || '';
+            } catch {}
+            const deepLink = token ? `${scheme}?order=${encodeURIComponent(token)}` : scheme;
+            await Linking.openURL(deepLink);
+          } else {
+            await Linking.openURL(scheme);
+          }
+          return;
+        }
+      }
+      if (orderUrl) {
+        await Linking.openURL(orderUrl);
       } else {
-        Alert.alert("Không mở được ZaloPay", "Bạn chưa cài app ZaloPay Sandbox");
+        Alert.alert('Không mở được ZaloPay', 'Không tìm thấy ứng dụng ZaloPay hoặc liên kết thanh toán.');
       }
     } catch (error) {
-      console.error("Error opening ZaloPay:", error);
-      Alert.alert("Lỗi", "Không thể mở ZaloPay. Vui lòng thử lại sau.");
+      Alert.alert('Lỗi', 'Không thể mở ZaloPay. Vui lòng thử lại sau.');
     }
   };
   
@@ -165,7 +277,7 @@ export default function TopUpScreen() {
                 <Text style={styles.balanceTitle}>Số dư hiện tại</Text>
               </View>
               <View style={styles.balanceAmount}>
-                <Text style={styles.balanceValue}>0</Text>
+                <Text style={styles.balanceValue}>{walletBalance.toLocaleString('vi-VN')}</Text>
                 <View style={styles.coinIcon}>
                   <Text style={styles.coinText}>Xu</Text>
                 </View>
@@ -244,24 +356,45 @@ export default function TopUpScreen() {
                 • Xu sẽ được cộng ngay sau khi thanh toán thành công{'\n'}
                 • Hỗ trợ 24/7 nếu có vấn đề
               </Text>
+
+              {showPayment && orderUrl && (
+                <View style={styles.qrContainer}>
+                  <Text style={styles.qrTitle}>Quét QR để thanh toán</Text>
+                  <View style={styles.qrBox}>
+                    <QRCode value={orderUrl} size={200} />
+                  </View>
+                  <View style={styles.qrActions}>
+                    <TouchableOpacity style={styles.qrActionButton} onPress={async () => { await Clipboard.setStringAsync(orderUrl as string); Alert.alert('Đã sao chép', 'Link thanh toán đã được sao chép'); }}>
+                      <Ionicons name="copy" size={16} color="#000" />
+                      <Text style={styles.qrActionText}>Sao chép link</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.qrActionButton} onPress={() => Linking.openURL(orderUrl)}>
+                      <Ionicons name="open" size={16} color="#000" />
+                      <Text style={styles.qrActionText}>Mở trình duyệt</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </View>
           </ScrollView>
 
           {/* Fixed Bottom Button */}
           <View style={styles.bottomContainer}>
-            <TouchableOpacity
-              style={[
-                styles.topUpButton,
-                (!coinAmount || parseInt(coinAmount) < 1000) && styles.disabledButton
-              ]}
-              onPress={handleTopUp}
-              disabled={!coinAmount || parseInt(coinAmount) < 1000}
-            >
-              <Ionicons name="card" size={20} color="#000" style={styles.buttonIcon} />
-              <Text style={styles.topUpButtonText}>
-                Nạp {coinAmount ? formatCurrency(coinAmount) : '0'} xu
-              </Text>
-            </TouchableOpacity>
+            {!showPayment && (
+              <TouchableOpacity
+                style={[
+                  styles.topUpButton,
+                  (creating || !coinAmount || parseInt(coinAmount) < 1000) && styles.disabledButton
+                ]}
+                onPress={handleTopUp}
+                disabled={creating || !coinAmount || parseInt(coinAmount) < 1000}
+              >
+                <Ionicons name="card" size={20} color="#000" style={styles.buttonIcon} />
+                <Text style={styles.topUpButtonText}>
+                  Nạp {coinAmount ? formatCurrency(coinAmount) : '0'} xu
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -465,6 +598,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
+  },
+  qrContainer: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  qrTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 8,
+  },
+  qrBox: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  qrActions: {
+    flexDirection: 'row',
+    marginTop: 12,
+    gap: 12,
+  },
+  qrActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFD700',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  qrActionText: {
+    marginLeft: 6,
+    color: '#000',
+    fontWeight: '600',
   },
   bottomContainer: {
     backgroundColor: '#fff',

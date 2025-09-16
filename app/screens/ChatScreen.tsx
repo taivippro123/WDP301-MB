@@ -2,12 +2,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
   DeviceEventEmitter,
   FlatList,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -26,7 +29,7 @@ import { useAuth } from '../AuthContext';
 export default function ChatScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { accessToken, user } = useAuth();
+  const { accessToken, user, logout } = useAuth();
   const routeParams: any = (route.params as any) || {};
   const initialConversationId = routeParams.conversationId || routeParams?.params?.conversationId;
   const peerName = routeParams.peerName || routeParams?.params?.peerName;
@@ -36,6 +39,7 @@ export default function ChatScreen() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [isLoadingList, setIsLoadingList] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const flatListRef = useRef(null);
 
   // Conversations mapped to list items
@@ -64,6 +68,11 @@ export default function ChatScreen() {
     setIsLoadingList(true);
     try {
       const res = await fetch(`${API_URL}/api/chat`, { headers: authHeaders() });
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
       const contentType = res.headers.get('content-type') || '';
       const raw = await res.text();
       const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
@@ -134,6 +143,11 @@ export default function ChatScreen() {
       for (const url of urls) {
         try {
           const res = await fetch(url, { headers: authHeaders() });
+          if (res.status === 401) {
+            await logout();
+            (navigation as any).navigate('Tài khoản');
+            return;
+          }
           const contentType = res.headers.get('content-type') || '';
           const raw = await res.text();
           const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
@@ -292,6 +306,11 @@ export default function ChatScreen() {
         headers: authHeaders(),
         body: JSON.stringify({ conversationId: convId, text }),
       });
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
       const contentType = res.headers.get('content-type') || '';
       const raw = await res.text();
       const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
@@ -400,12 +419,30 @@ export default function ChatScreen() {
       styles.messageContainer,
       item.sender === 'me' ? styles.myMessage : styles.otherMessage
     ]}>
-      <Text style={[
-        styles.messageText,
-        item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
-      ]}>
-        {item.text}
-      </Text>
+      {item.files && item.files.length > 0 && (
+        <View style={styles.fileContainer}>
+          {item.files.map((file: any, index: number) => (
+            <View key={index} style={styles.fileItem}>
+              {file.type?.startsWith('image/') ? (
+                <Image source={{ uri: file.url }} style={styles.fileImage} />
+              ) : (
+                <View style={styles.fileIcon}>
+                  <Ionicons name="document" size={24} color="#666" />
+                  <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+      {item.text && (
+        <Text style={[
+          styles.messageText,
+          item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
+        ]}>
+          {item.text}
+        </Text>
+      )}
       <Text style={styles.messageTime}>{item.time}</Text>
     </View>
   );
@@ -441,33 +478,142 @@ export default function ChatScreen() {
     Keyboard.dismiss();
   };
 
+  const uploadChatFiles = async (files: any[]) => {
+    if (!selectedChat) return;
+    
+    setUploadingFiles(true);
+    try {
+      const formData = new FormData();
+      files.forEach((file, index) => {
+        formData.append('files', {
+          uri: file.uri,
+          type: file.type || 'application/octet-stream',
+          name: file.name || `file_${index}`,
+        } as any);
+      });
+      formData.append('conversationId', selectedChat.id);
+      if (newMessage.trim()) {
+        formData.append('text', newMessage.trim());
+      }
+
+      const response = await fetch(`${API_URL}/api/chat/messages/files`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        // Add file message to chat
+        const fileMessage = {
+          id: result.message?._id || Date.now(),
+          text: result.message?.text || `Đã gửi ${files.length} file`,
+          sender: 'me',
+          time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          files: result.message?.files || files.map(f => ({ url: f.uri, name: f.name, type: f.type }))
+        };
+        
+        setChatMessages((prev: any) => ({
+          ...prev,
+          [selectedChat.id]: [...(prev[selectedChat.id] || []), fileMessage],
+        }));
+        
+        setNewMessage('');
+        setTimeout(() => { if (flatListRef.current) (flatListRef.current as any).scrollToEnd({ animated: true }); }, 10);
+        Alert.alert('Thành công', `Đã gửi ${files.length} file`);
+      } else {
+        throw new Error(result.message || 'Có lỗi xảy ra');
+      }
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Không thể gửi file');
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const pickImages = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.granted === false) {
+        Alert.alert('Lỗi', 'Cần quyền truy cập thư viện ảnh');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        selectionLimit: 5,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        const files = result.assets.map(asset => ({
+          uri: asset.uri,
+          type: asset.type || 'image/jpeg',
+          name: asset.fileName || `image_${Date.now()}.jpg`,
+        }));
+        await uploadChatFiles(files);
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể chọn ảnh');
+    }
+  };
+
+  const pickDocuments = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        const files = result.assets.map(asset => ({
+          uri: asset.uri,
+          type: asset.mimeType || 'application/octet-stream',
+          name: asset.name || `document_${Date.now()}`,
+        }));
+        await uploadChatFiles(files);
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể chọn tài liệu');
+    }
+  };
+
   const handleImagePicker = () => {
-    const options = ['Chụp ảnh', 'Chọn từ thư viện', 'Hủy'];
+    const options = ['Chụp ảnh', 'Chọn từ thư viện', 'Chọn tài liệu', 'Hủy'];
     
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options,
-          cancelButtonIndex: 2,
-          title: 'Chọn ảnh'
+          cancelButtonIndex: 3,
+          title: 'Chọn file'
         },
         (buttonIndex) => {
           if (buttonIndex === 0) {
             // Camera
-            Alert.alert('Camera', 'Mở camera để chụp ảnh');
+            pickImages();
           } else if (buttonIndex === 1) {
             // Gallery
-            Alert.alert('Thư viện', 'Mở thư viện ảnh');
+            pickImages();
+          } else if (buttonIndex === 2) {
+            // Documents
+            pickDocuments();
           }
         }
       );
     } else {
       Alert.alert(
-        'Chọn ảnh',
-        'Bạn muốn chụp ảnh mới hay chọn từ thư viện?',
+        'Chọn file',
+        'Bạn muốn chọn loại file nào?',
         [
-          { text: 'Chụp ảnh', onPress: () => Alert.alert('Camera', 'Mở camera để chụp ảnh') },
-          { text: 'Thư viện', onPress: () => Alert.alert('Thư viện', 'Mở thư viện ảnh') },
+          { text: 'Chụp ảnh', onPress: pickImages },
+          { text: 'Thư viện ảnh', onPress: pickImages },
+          { text: 'Tài liệu', onPress: pickDocuments },
           { text: 'Hủy', style: 'cancel' }
         ]
       );
@@ -543,10 +689,15 @@ export default function ChatScreen() {
           {/* Input */}
           <View style={styles.inputContainer}>
             <TouchableOpacity 
-              style={styles.attachButton}
+              style={[styles.attachButton, uploadingFiles && styles.uploadingButton]}
               onPress={handleImagePicker}
+              disabled={uploadingFiles}
             >
-              <Ionicons name="image" size={20} color="#666" />
+              {uploadingFiles ? (
+                <Ionicons name="cloud-upload" size={20} color="#FFD700" />
+              ) : (
+                <Ionicons name="attach" size={20} color="#666" />
+              )}
             </TouchableOpacity>
             
             <TextInput
@@ -929,5 +1080,33 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     backgroundColor: '#f0f0f0',
+  },
+  fileContainer: {
+    marginBottom: 8,
+  },
+  fileItem: {
+    marginBottom: 4,
+  },
+  fileImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+  },
+  fileIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    maxWidth: 200,
+  },
+  fileName: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#666',
+    flex: 1,
+  },
+  uploadingButton: {
+    opacity: 0.7,
   },
 });

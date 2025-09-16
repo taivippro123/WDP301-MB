@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import React from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  Image,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -35,6 +38,9 @@ type MenuSection = {
 export default function AccountScreen({ onLogout }: AccountScreenProps) {
   const navigation = useNavigation();
   const { user, accessToken, logout } = useAuth();
+  const [avatarUri, setAvatarUri] = useState<string | null>((user as any)?.avatar || null);
+  const [uploading, setUploading] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const menuItems: MenuSection[] = [
     {
       section: 'Tiện ích',
@@ -61,6 +67,89 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
       ]
     }
   ];
+
+  const uploadAvatar = async (uri: string) => {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', {
+        uri,
+        type: 'image/jpeg',
+        name: 'avatar.jpg',
+      } as any);
+
+      const response = await fetch(`${API_URL}/api/upload/avatar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        setAvatarUri(result.url || result.avatar);
+        Alert.alert('Thành công', 'Cập nhật ảnh đại diện thành công');
+      } else {
+        throw new Error(result.message || 'Có lỗi xảy ra');
+      }
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Không thể cập nhật ảnh đại diện');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleAvatarPress = () => {
+    Alert.alert(
+      'Chọn ảnh đại diện',
+      'Bạn muốn chụp ảnh mới hay chọn từ thư viện?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Chụp ảnh', onPress: () => pickImage('camera') },
+        { text: 'Thư viện', onPress: () => pickImage('library') },
+      ]
+    );
+  };
+
+  const pickImage = async (source: 'camera' | 'library') => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.granted === false) {
+        Alert.alert('Lỗi', 'Cần quyền truy cập thư viện ảnh');
+        return;
+      }
+
+      let result;
+      if (source === 'camera') {
+        const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+        if (cameraPermission.granted === false) {
+          Alert.alert('Lỗi', 'Cần quyền truy cập camera');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      }
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadAvatar(result.assets[0].uri);
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể chọn ảnh');
+    }
+  };
 
   const handleMenuItemPress = (item: MenuItem) => {
     if (item.action === 'logout') {
@@ -96,6 +185,30 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
       }
     }
   };
+
+  const fetchWallet = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/profile/wallet`, {
+        headers: {
+          'Accept': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        }
+      });
+      const raw = await res.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch {}
+      if (res.ok) {
+        const bal = data?.wallet?.balance ?? data?.balance ?? 0;
+        setWalletBalance(Number(bal) || 0);
+      }
+    } catch {}
+  }, [accessToken]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchWallet();
+    return () => { mounted = false; };
+  }, [accessToken, fetchWallet]);
 
   const renderMenuItem = (item: MenuItem, index: number) => (
     <TouchableOpacity 
@@ -162,15 +275,32 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
         style={styles.content} 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={false}
+            onRefresh={fetchWallet}
+            colors={['#FFD700']}
+            tintColor="#FFD700"
+          />
+        }
       >
         {/* Profile Section */}
         <View style={styles.profileSection}>
           <View style={styles.profileInfo}>
             <View style={styles.profileAvatar}>
-              <View style={styles.avatar}>
-                <Ionicons name="person" size={32} color="#ccc" />
-              </View>
-              <TouchableOpacity style={styles.editButton}>
+              <TouchableOpacity style={styles.avatar} onPress={handleAvatarPress} disabled={uploading}>
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+                ) : (
+                  <Ionicons name="person" size={32} color="#ccc" />
+                )}
+                {uploading && (
+                  <View style={styles.uploadingOverlay}>
+                    <Ionicons name="cloud-upload" size={20} color="#fff" />
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.editButton} onPress={handleAvatarPress} disabled={uploading}>
                 <Ionicons name="create" size={16} color="#000" />
               </TouchableOpacity>
             </View>
@@ -191,7 +321,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
                 <View style={styles.dongTotRow}>
                   <Text style={styles.dongTotLabel}>Ví Ecoin:</Text>
                   <View style={styles.dongTotBadge}>
-                    <Text style={styles.dongTotValue}>0</Text>
+                    <Text style={styles.dongTotValue}>{(walletBalance ?? 0).toLocaleString('vi-VN')}</Text>
                     <View style={styles.dongTotIcon}>
                       <Text style={styles.dongTotIconText}>Xu</Text>
                     </View>
@@ -460,5 +590,21 @@ const styles = StyleSheet.create({
   },
   proBadgeText: {
     color: '#fff',
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

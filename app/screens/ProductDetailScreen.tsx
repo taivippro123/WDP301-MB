@@ -48,7 +48,7 @@ export default function ProductDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { productId } = (route.params as { productId: string }) || { productId: '' };
-  const { accessToken } = useAuth();
+  const { accessToken, user, logout } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [isImageViewerVisible, setIsImageViewerVisible] = useState(false);
@@ -65,6 +65,11 @@ export default function ProductDetailScreen() {
       setErrorText(null);
       try {
         const res = await fetch(`${API_URL}/api/products/${productId}`);
+        if (res.status === 401) {
+          await logout();
+          (navigation as any).navigate('Tài khoản');
+          return;
+        }
         const json = await res.json();
         const p: Product = json.product || json;
         if (mounted) setProduct(p);
@@ -137,6 +142,11 @@ export default function ProductDetailScreen() {
         },
         body: JSON.stringify({ productId: product._id, sellerId: product.seller._id }),
       });
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
       const contentType = res.headers.get('content-type') || '';
       const raw = await res.text();
       let data: any;
@@ -166,6 +176,18 @@ export default function ProductDetailScreen() {
     });
   };
 
+  const handleBuyPress = () => {
+    if (!product) return;
+    Alert.alert(
+      'Mua sản phẩm',
+      `Bạn muốn mua "${product.title}" với giá ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Xác nhận', onPress: () => Alert.alert('Thành công', 'Đơn hàng của bạn đã được tạo (demo).') }
+      ]
+    );
+  };
+
 
 
   const handleImagePress = (index: number) => {
@@ -191,6 +213,8 @@ export default function ProductDetailScreen() {
       </View>
     );
   }
+
+  const isOwner = !!(user?._id && product?.seller?._id && user._id === product.seller._id);
 
   return (
     <View style={styles.container}>
@@ -326,6 +350,7 @@ export default function ProductDetailScreen() {
           </View>
 
           {/* Seller Contact */}
+          {!isOwner && (
           <View style={styles.sellerContainer}>
             <Text style={styles.sectionTitle}>Thông tin người bán</Text>
             <View style={styles.sellerInfo}>
@@ -334,16 +359,34 @@ export default function ProductDetailScreen() {
                 <TouchableOpacity onPress={handlePhonePress}>
                   <Text style={styles.sellerPhone}>{product.seller?.phone || '---'}</Text>
                 </TouchableOpacity>
-                <Text style={styles.sellerLocation}>
-                  {typeof product.location === 'string' ? product.location : `${product.location?.address || ''}${product.location?.city ? `, ${product.location.city}` : ''}${product.location?.province ? `, ${product.location.province}` : ''}`}
-                </Text>
+                <Text style={styles.sellerLocation}>{(() => {
+                  const addr = (product as any)?.seller?.profile?.address || (product as any)?.seller?.address;
+                  if (addr && (addr.province || addr.district || addr.ward || addr.houseNumber)) {
+                    const parts = [addr.houseNumber, addr.ward, addr.district, addr.province].filter(Boolean);
+                    return parts.join(', ');
+                  }
+                  if (typeof product.location === 'string') return product.location as any;
+                  if (product.location && typeof product.location === 'object') {
+                    const a: any = product.location;
+                    const parts = [a.address, a.city, a.province].filter(Boolean);
+                    return parts.join(', ');
+                  }
+                  return '';
+                })()}</Text>
               </View>
-              <TouchableOpacity style={styles.chatIconButton} onPress={handleChatPress}>
-                <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
-                <Text style={styles.chatButtonText}>Chat</Text>
-              </TouchableOpacity>
+              <View style={styles.sellerActions}>
+                <TouchableOpacity style={styles.chatIconButton} onPress={handleChatPress}>
+                  <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+                  <Text style={styles.chatButtonText}>Chat</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.buyInlineButton} onPress={handleBuyPress}>
+                  <Ionicons name="cart" size={20} color="#fff" />
+                  <Text style={styles.buyInlineText}>Mua</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
+          )}
 
           {/* Vehicle Info */}
           <View style={styles.vehicleInfoContainer}>
@@ -423,6 +466,7 @@ export default function ProductDetailScreen() {
           <View style={styles.bottomSpacing} />
         </View>
       </Animated.ScrollView>
+      {/* Bottom buy bar removed to place Buy next to Chat */}
     </View>
   );
 }
@@ -666,6 +710,33 @@ const styles = StyleSheet.create({
     color: '#000',
     marginLeft: 6,
   },
+  sellerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  buyInlineButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e67e22',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginLeft: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 3,
+  },
+  buyInlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 6,
+  },
   vehicleInfoContainer: {
     marginBottom: 24,
   },
@@ -721,6 +792,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  buyButton: {
+    flex: 1,
+    backgroundColor: '#FFD700',
+    borderRadius: 8,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buyButtonText: {
+    fontSize: 16,
+    color: '#000',
+    fontWeight: '600',
   },
   chatButton: {
     flex: 1,
