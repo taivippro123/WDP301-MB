@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
     Alert,
+    ActivityIndicator,
     FlatList,
     Image,
     Keyboard,
@@ -114,6 +115,7 @@ export default function PostListingScreen() {
     };
 
     const handleSubmit = async () => {
+        if (submitting) return;
         if (!formData.title || !formData.price) {
             Alert.alert('Lỗi', 'Vui lòng nhập tiêu đề và giá bán');
             return;
@@ -501,8 +503,16 @@ export default function PostListingScreen() {
 
                         {/* Submit */}
                         <View style={styles.section}>      
-                            <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                                <Text style={styles.submitButtonText}>Đăng tin</Text>
+                            <TouchableOpacity
+                                style={[styles.submitButton, submitting ? { opacity: 0.6 } : null]}
+                                onPress={handleSubmit}
+                                disabled={submitting}
+                            >
+                                {submitting ? (
+                                    <ActivityIndicator size="small" color="#000" />
+                                ) : (
+                                    <Text style={styles.submitButtonText}>Đăng tin</Text>
+                                )}
                             </TouchableOpacity>
                         </View>
 
