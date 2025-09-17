@@ -144,7 +144,17 @@ function ProtectedScreen({ children, screenName, navigation }: { children: React
       <LoginScreen 
         onLogin={() => {}}
         onNavigateToRegister={() => setShowRegister(true)}
-        onBackToHome={() => navigation.navigate('Trang chủ')}
+        onBackToHome={() => {
+          try {
+            if ((navigation as any).canGoBack && (navigation as any).canGoBack()) {
+              (navigation as any).goBack();
+            } else {
+              (navigation.getParent() || navigation).navigate('Trang chủ');
+            }
+          } catch {
+            (navigation.getParent() || navigation).navigate('Trang chủ');
+          }
+        }}
         showBackButton={true}
       />
     );
