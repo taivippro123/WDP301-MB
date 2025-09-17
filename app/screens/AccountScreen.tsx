@@ -182,8 +182,8 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
         (navigation as any).navigate('Profile');
       } else if (item.action === 'open_orders') {
         (navigation as any).navigate('OrderHistory');
-      } else {
-        Alert.alert('Thông báo', `Tính năng "${item.title}" sẽ được phát triển trong tương lai`);
+    } else {
+      Alert.alert('Thông báo', `Tính năng "${item.title}" sẽ được phát triển trong tương lai`);
       }
     }
   };
@@ -294,12 +294,12 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
                 {avatarUri ? (
                   <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
                 ) : (
-                  <Ionicons name="person" size={32} color="#ccc" />
+                <Ionicons name="person" size={32} color="#ccc" />
                 )}
                 {uploading && (
                   <View style={styles.uploadingOverlay}>
                     <Ionicons name="cloud-upload" size={20} color="#fff" />
-                  </View>
+              </View>
                 )}
               </TouchableOpacity>
               <TouchableOpacity style={styles.editButton} onPress={handleAvatarPress} disabled={uploading}>

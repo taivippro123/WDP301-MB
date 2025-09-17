@@ -1,122 +1,143 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
+  Image,
   SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import API_URL from "../../config/api";
+import { useAuth } from "../AuthContext";
 
-interface WishlistProduct {
-  id: number;
-  title: string;
-  price: string;
-  location: string;
-  brand: string;
-  year: number;
-  batteryCapacity: string;
-  batteryCondition: string;
-  mileage: string;
-  dateAdded: string;
-  isAvailable: boolean;
+interface WishlistItem {
+  _id: string;
+  userId: string;
+  productId: string;
+  addedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  __v: number;
 }
 
-const mockWishlistProducts: WishlistProduct[] = [
-  {
-    id: 1,
-    title: "Xe máy điện VinFast Klara A2",
-    price: "35,000,000 VNĐ",
-    location: "Hà Nội",
-    brand: "VinFast",
-    year: 2023,
-    batteryCapacity: "48V 20Ah",
-    batteryCondition: "95%",
-    mileage: "1,200 km",
-    dateAdded: "2 ngày trước",
-    isAvailable: true,
-  },
-  {
-    id: 2,
-    title: "Ô tô điện VinFast VF8",
-    price: "1,200,000,000 VNĐ",
-    location: "TP.HCM",
-    brand: "VinFast",
-    year: 2024,
-    batteryCapacity: "87.7 kWh",
-    batteryCondition: "98%",
-    mileage: "5,000 km",
-    dateAdded: "5 ngày trước",
-    isAvailable: true,
-  },
-  {
-    id: 3,
-    title: "Pin xe máy điện Lithium 60V 32Ah",
-    price: "8,500,000 VNĐ",
-    location: "Đà Nẵng",
-    brand: "Samsung",
-    year: 2023,
-    batteryCapacity: "60V 32Ah",
-    batteryCondition: "90%",
-    mileage: "N/A",
-    dateAdded: "1 tuần trước",
-    isAvailable: false,
-  },
-  {
-    id: 4,
-    title: "Xe đạp điện Yamaha PAS",
-    price: "18,000,000 VNĐ",
-    location: "Hà Nội",
-    brand: "Yamaha",
-    year: 2022,
-    batteryCapacity: "36V 15Ah",
-    batteryCondition: "85%",
-    mileage: "3,500 km",
-    dateAdded: "1 tuần trước",
-    isAvailable: true,
-  },
-  {
-    id: 5,
-    title: "Xe máy điện Honda PCX Electric",
-    price: "75,000,000 VNĐ",
-    location: "Hà Nội",
-    brand: "Honda",
-    year: 2024,
-    batteryCapacity: "50.4V 30Ah",
-    batteryCondition: "100%",
-    mileage: "500 km",
-    dateAdded: "2 tuần trước",
-    isAvailable: true,
-  },
-  {
-    id: 6,
-    title: "Pin ô tô điện Tesla Model 3",
-    price: "450,000,000 VNĐ",
-    location: "TP.HCM",
-    brand: "Tesla",
-    year: 2023,
-    batteryCapacity: "75 kWh",
-    batteryCondition: "92%",
-    mileage: "N/A",
-    dateAdded: "3 tuần trước",
-    isAvailable: true,
-  },
-];
+interface Product {
+  _id: string;
+  title: string;
+  price: number;
+  location?: any;
+  brand?: string;
+  year?: number;
+  images?: string[];
+  isAvailable?: boolean;
+  condition?: string;
+  specifications?: {
+    batteryCapacity?: string;
+    mileage?: string;
+  };
+  seller?: {
+    address?: {
+      province?: string;
+      city?: string;
+    };
+  };
+}
+
+interface WishlistProduct extends WishlistItem {
+  product: Product;
+}
+
+// Mock data removed - will use API data
 
 export default function WishlistScreen() {
   const navigation = useNavigation();
-  const [wishlistProducts, setWishlistProducts] =
-    useState(mockWishlistProducts);
-  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const { accessToken, logout } = useAuth();
+  const [wishlistProducts, setWishlistProducts] = useState<WishlistProduct[]>([]);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [sortFilter, setSortFilter] = useState<
     "all" | "available" | "sold_out"
   >("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorText, setErrorText] = useState<string | null>(null);
 
-  const handleProductPress = (productId: number) => {
+  // Fetch wishlist from API
+  const fetchWishlist = async () => {
+    if (!accessToken) return;
+    
+    setIsLoading(true);
+    setErrorText(null);
+    try {
+      // First, get wishlist items
+      const wishlistRes = await fetch(`${API_URL}/api/profile/wishlist`, {
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+      
+      if (wishlistRes.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
+      
+      if (!wishlistRes.ok) {
+        setErrorText('Không tải được danh sách yêu thích');
+        return;
+      }
+      
+      const wishlistJson = await wishlistRes.json();
+      const wishlistItems = wishlistJson.items || [];
+      
+      if (wishlistItems.length === 0) {
+        setWishlistProducts([]);
+        return;
+      }
+      
+      // Get product IDs from wishlist
+      const productIds = wishlistItems.map((item: any) => item.productId);
+      
+      // Fetch all products to get full product details
+      const productsRes = await fetch(`${API_URL}/api/products`);
+      if (!productsRes.ok) {
+        setErrorText('Không tải được thông tin sản phẩm');
+        return;
+      }
+      
+      const productsJson = await productsRes.json();
+      const allProducts = Array.isArray(productsJson) ? productsJson : (productsJson.products ?? []);
+      
+      // Match wishlist items with product details
+      const wishlistWithProducts = wishlistItems.map((wishlistItem: any) => {
+        const product = allProducts.find((p: any) => p._id === wishlistItem.productId);
+        return {
+          ...wishlistItem,
+          product: product || {
+            _id: wishlistItem.productId,
+            title: 'Sản phẩm không tìm thấy',
+            price: 0,
+            isAvailable: false
+          }
+        };
+      });
+      
+      setWishlistProducts(wishlistWithProducts);
+    } catch (e) {
+      setErrorText('Không tải được danh sách yêu thích');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWishlist();
+  }, [accessToken]);
+
+  const handleProductPress = (productId: string) => {
     if (isSelectionMode) {
       toggleSelection(productId);
     } else {
@@ -124,7 +145,7 @@ export default function WishlistScreen() {
     }
   };
 
-  const toggleSelection = (productId: number) => {
+  const toggleSelection = (productId: string) => {
     setSelectedItems((prev) =>
       prev.includes(productId)
         ? prev.filter((id) => id !== productId)
@@ -132,7 +153,7 @@ export default function WishlistScreen() {
     );
   };
 
-  const handleRemoveFromWishlist = (productId: number) => {
+  const handleRemoveFromWishlist = async (productId: string) => {
     Alert.alert(
       "Xóa khỏi danh sách yêu thích",
       "Bạn có chắc chắn muốn xóa sản phẩm này khỏi danh sách yêu thích?",
@@ -141,11 +162,33 @@ export default function WishlistScreen() {
         {
           text: "Xóa",
           style: "destructive",
-          onPress: () => {
-            setWishlistProducts((prev) =>
-              prev.filter((product) => product.id !== productId)
-            );
-            setSelectedItems((prev) => prev.filter((id) => id !== productId));
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_URL}/api/profile/wishlist/${productId}`, {
+                method: 'DELETE',
+                headers: {
+                  'Accept': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`,
+                },
+              });
+              
+              if (res.status === 401) {
+                await logout();
+                (navigation as any).navigate('Tài khoản');
+                return;
+              }
+              
+              if (res.ok) {
+                setWishlistProducts((prev) =>
+                  prev.filter((item) => item.productId !== productId)
+                );
+                setSelectedItems((prev) => prev.filter((id) => id !== productId));
+              } else {
+                Alert.alert('Lỗi', 'Không thể xóa sản phẩm khỏi danh sách yêu thích');
+              }
+            } catch (e) {
+              Alert.alert('Lỗi', 'Không thể xóa sản phẩm khỏi danh sách yêu thích');
+            }
           },
         },
       ]
@@ -161,12 +204,34 @@ export default function WishlistScreen() {
         {
           text: "Xóa",
           style: "destructive",
-          onPress: () => {
-            setWishlistProducts((prev) =>
-              prev.filter((product) => !selectedItems.includes(product.id))
-            );
-            setSelectedItems([]);
-            setIsSelectionMode(false);
+          onPress: async () => {
+            try {
+              // Remove all selected items
+              const deletePromises = selectedItems.map(productId =>
+                fetch(`${API_URL}/api/profile/wishlist/${productId}`, {
+                  method: 'DELETE',
+                  headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                  },
+                })
+              );
+              
+              const results = await Promise.all(deletePromises);
+              const failedDeletes = results.filter(res => !res.ok);
+              
+              if (failedDeletes.length === 0) {
+                setWishlistProducts((prev) =>
+                  prev.filter((item) => !selectedItems.includes(item.productId))
+                );
+                setSelectedItems([]);
+                setIsSelectionMode(false);
+              } else {
+                Alert.alert('Lỗi', 'Một số sản phẩm không thể xóa');
+              }
+            } catch (e) {
+              Alert.alert('Lỗi', 'Không thể xóa sản phẩm đã chọn');
+            }
           },
         },
       ]
@@ -178,18 +243,43 @@ export default function WishlistScreen() {
     if (selectedItems.length === filteredProducts.length) {
       setSelectedItems([]);
     } else {
-      setSelectedItems(filteredProducts.map((product) => product.id));
+      setSelectedItems(filteredProducts.map((item) => item.productId));
     }
   };
 
   const getFilteredProducts = () => {
     switch (sortFilter) {
       case "available":
-        return wishlistProducts.filter((product) => product.isAvailable);
+        return wishlistProducts.filter((item) => item.product?.isAvailable !== false);
       case "sold_out":
-        return wishlistProducts.filter((product) => !product.isAvailable);
+        return wishlistProducts.filter((item) => item.product?.isAvailable === false);
       default:
         return wishlistProducts;
+    }
+  };
+
+  const formatPrice = (price?: number) => {
+    if (price === undefined || price === null) return '';
+    try {
+      return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+    } catch {
+      return `${price} VNĐ`;
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffTime = Math.abs(now.getTime() - date.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 1) return '1 ngày trước';
+      if (diffDays < 7) return `${diffDays} ngày trước`;
+      if (diffDays < 30) return `${Math.ceil(diffDays / 7)} tuần trước`;
+      return `${Math.ceil(diffDays / 30)} tháng trước`;
+    } catch {
+      return 'Vừa xong';
     }
   };
 
@@ -197,27 +287,27 @@ export default function WishlistScreen() {
     <TouchableOpacity
       style={[
         styles.productItem,
-        !item.isAvailable && styles.unavailableProduct,
-        selectedItems.includes(item.id) && styles.selectedProduct,
+        item.product?.isAvailable === false && styles.unavailableProduct,
+        selectedItems.includes(item.productId) && styles.selectedProduct,
       ]}
-      onPress={() => handleProductPress(item.id)}
+      onPress={() => handleProductPress(item.productId)}
       onLongPress={() => {
         setIsSelectionMode(true);
-        toggleSelection(item.id);
+        toggleSelection(item.productId);
       }}
     >
       {isSelectionMode && (
         <TouchableOpacity
           style={styles.selectionButton}
-          onPress={() => toggleSelection(item.id)}
+          onPress={() => toggleSelection(item.productId)}
         >
           <View
             style={[
               styles.checkbox,
-              selectedItems.includes(item.id) && styles.checkedBox,
+              selectedItems.includes(item.productId) && styles.checkedBox,
             ]}
           >
-            {selectedItems.includes(item.id) && (
+            {selectedItems.includes(item.productId) && (
               <Ionicons name="checkmark" size={16} color="#fff" />
             )}
           </View>
@@ -225,8 +315,16 @@ export default function WishlistScreen() {
       )}
 
       <View style={styles.productImage}>
-        <Ionicons name="image-outline" size={40} color="#ccc" />
-        {!item.isAvailable && (
+        {item.product?.images && item.product.images.length > 0 ? (
+          <Image 
+            source={{ uri: item.product.images[0] }} 
+            style={{ width: '100%', height: '100%', borderRadius: 8 }} 
+            resizeMode="cover"
+          />
+        ) : (
+          <Ionicons name="image-outline" size={40} color="#ccc" />
+        )}
+        {item.product?.isAvailable === false && (
           <View style={styles.unavailableOverlay}>
             <Text style={styles.unavailableText}>Không còn bán</Text>
           </View>
@@ -235,31 +333,46 @@ export default function WishlistScreen() {
 
       <View style={styles.productInfo}>
         <Text style={styles.productTitle} numberOfLines={2}>
-          {item.title}
+          {item.product?.title || 'Sản phẩm không xác định'}
         </Text>
-        <Text style={styles.productPrice}>{item.price}</Text>
+        <Text style={styles.productPrice}>{formatPrice(item.product?.price)}</Text>
         <View style={styles.productDetails}>
-          <Text style={styles.productDetail}>
-            {item.brand} • {item.year}
-          </Text>
-          <Text style={styles.productDetail}>Pin: {item.batteryCapacity}</Text>
-          <Text style={styles.productDetail}>
-            Tình trạng: {item.batteryCondition}
-          </Text>
-          {item.mileage !== "N/A" && (
-            <Text style={styles.productDetail}>Đã đi: {item.mileage}</Text>
+          {(item.product?.brand || item.product?.year) && (
+            <Text style={styles.productDetail}>
+              {item.product?.brand}{item.product?.year ? ` • ${item.product.year}` : ''}
+            </Text>
+          )}
+          {item.product?.specifications?.batteryCapacity && (
+            <Text style={styles.productDetail}>Pin: {item.product.specifications.batteryCapacity}</Text>
+          )}
+          {item.product?.condition && (
+            <Text style={styles.productDetail}>
+              Tình trạng: {item.product.condition}
+            </Text>
+          )}
+          {item.product?.specifications?.mileage && item.product.specifications.mileage !== "N/A" && (
+            <Text style={styles.productDetail}>Đã đi: {item.product.specifications.mileage}</Text>
           )}
         </View>
         <View style={styles.productFooter}>
-          <Text style={styles.productLocation}>{item.location}</Text>
-          <Text style={styles.dateAdded}>Đã lưu {item.dateAdded}</Text>
+          <Text style={styles.productLocation}>
+            {(() => {
+              const sellerAddr = item.product?.seller?.address;
+              if (sellerAddr?.province) return sellerAddr.province;
+              const loc: any = item.product?.location;
+              if (loc?.province) return loc.province;
+              if (loc?.city) return loc.city;
+              return loc || 'Không xác định';
+            })()}
+          </Text>
+          <Text style={styles.dateAdded}>Đã lưu {formatDate(item.addedAt)}</Text>
         </View>
       </View>
 
       {!isSelectionMode && (
         <TouchableOpacity
           style={styles.removeButton}
-          onPress={() => handleRemoveFromWishlist(item.id)}
+          onPress={() => handleRemoveFromWishlist(item.productId)}
         >
           <Ionicons name="heart" size={20} color="#FF6B35" />
         </TouchableOpacity>
@@ -381,7 +494,7 @@ export default function WishlistScreen() {
               sortFilter === "available" && styles.activeSortOptionText,
             ]}
           >
-            Có sẵn ({wishlistProducts.filter((p) => p.isAvailable).length})
+            Có sẵn ({wishlistProducts.filter((item) => item.product?.isAvailable !== false).length})
           </Text>
         </TouchableOpacity>
 
@@ -403,7 +516,7 @@ export default function WishlistScreen() {
               sortFilter === "sold_out" && styles.activeSortOptionText,
             ]}
           >
-            Hết hàng ({wishlistProducts.filter((p) => !p.isAvailable).length})
+            Hết hàng ({wishlistProducts.filter((item) => item.product?.isAvailable === false).length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -412,44 +525,66 @@ export default function WishlistScreen() {
       <FlatList
         data={getFilteredProducts()}
         renderItem={renderProductItem}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => item._id}
         style={styles.productsList}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
         ListEmptyComponent={() => (
           <View style={styles.emptyContainer}>
-            <Ionicons
-              name={
-                sortFilter === "available"
-                  ? "checkmark-circle-outline"
-                  : sortFilter === "sold_out"
-                  ? "close-circle-outline"
-                  : "heart-outline"
-              }
-              size={48}
-              color="#ccc"
-            />
-            <Text style={styles.emptyTitle}>
-              {sortFilter === "available"
-                ? "Không có sản phẩm có sẵn"
-                : sortFilter === "sold_out"
-                ? "Không có sản phẩm hết hàng"
-                : "Chưa có sản phẩm yêu thích"}
-            </Text>
-            <Text style={styles.emptyMessage}>
-              {sortFilter === "available"
-                ? "Tất cả sản phẩm trong danh sách đã hết hàng"
-                : sortFilter === "sold_out"
-                ? "Tất cả sản phẩm trong danh sách vẫn còn có sẵn"
-                : "Hãy thêm sản phẩm vào danh sách yêu thích để dễ dàng theo dõi"}
-            </Text>
-            {sortFilter === "all" && (
-              <TouchableOpacity
-                style={styles.exploreButton}
-                onPress={() => (navigation as any).navigate("Trang chủ")}
-              >
-                <Text style={styles.exploreButtonText}>Khám phá sản phẩm</Text>
-              </TouchableOpacity>
+            {isLoading ? (
+              <>
+                <Ionicons name="refresh" size={48} color="#ccc" />
+                <Text style={styles.emptyTitle}>Đang tải...</Text>
+                <Text style={styles.emptyMessage}>Vui lòng chờ trong giây lát</Text>
+              </>
+            ) : errorText ? (
+              <>
+                <Ionicons name="alert-circle-outline" size={48} color="#FF6B6B" />
+                <Text style={styles.emptyTitle}>Có lỗi xảy ra</Text>
+                <Text style={styles.emptyMessage}>{errorText}</Text>
+                <TouchableOpacity
+                  style={styles.exploreButton}
+                  onPress={fetchWishlist}
+                >
+                  <Text style={styles.exploreButtonText}>Thử lại</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Ionicons
+                  name={
+                    sortFilter === "available"
+                      ? "checkmark-circle-outline"
+                      : sortFilter === "sold_out"
+                      ? "close-circle-outline"
+                      : "heart-outline"
+                  }
+                  size={48}
+                  color="#ccc"
+                />
+                <Text style={styles.emptyTitle}>
+                  {sortFilter === "available"
+                    ? "Không có sản phẩm có sẵn"
+                    : sortFilter === "sold_out"
+                    ? "Không có sản phẩm hết hàng"
+                    : "Chưa có sản phẩm yêu thích"}
+                </Text>
+                <Text style={styles.emptyMessage}>
+                  {sortFilter === "available"
+                    ? "Tất cả sản phẩm trong danh sách đã hết hàng"
+                    : sortFilter === "sold_out"
+                    ? "Tất cả sản phẩm trong danh sách vẫn còn có sẵn"
+                    : "Hãy thêm sản phẩm vào danh sách yêu thích để dễ dàng theo dõi"}
+                </Text>
+                {sortFilter === "all" && (
+                  <TouchableOpacity
+                    style={styles.exploreButton}
+                    onPress={() => (navigation as any).navigate("Trang chủ")}
+                  >
+                    <Text style={styles.exploreButtonText}>Khám phá sản phẩm</Text>
+                  </TouchableOpacity>
+                )}
+              </>
             )}
           </View>
         )}

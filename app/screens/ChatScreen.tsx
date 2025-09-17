@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
+  AppState,
   DeviceEventEmitter,
   FlatList,
   Image,
@@ -23,6 +24,7 @@ import {
   View
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import { io, Socket } from 'socket.io-client';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
 
@@ -40,6 +42,9 @@ export default function ChatScreen() {
   const [isLoadingList, setIsLoadingList] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const flatListRef = useRef(null);
 
   // Conversations mapped to list items
@@ -63,6 +68,209 @@ export default function ChatScreen() {
     'Content-Type': 'application/json',
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
   });
+
+  // Initialize WebSocket connection
+  const initializeSocket = () => {
+    if (!accessToken || socket) return;
+
+    const socketUrl = API_URL.replace('/api', '');
+    console.log('Initializing socket with URL:', socketUrl);
+    console.log('Access token available:', !!accessToken);
+
+    const newSocket = io(socketUrl, {
+      auth: {
+        token: accessToken
+      },
+      transports: ['polling', 'websocket'], // Try polling first
+      timeout: 20000,
+      forceNew: true,
+      autoConnect: true
+    });
+
+    newSocket.on('connect', () => {
+      console.log('Socket connected successfully');
+      setIsConnected(true);
+      stopPolling(); // Stop polling when WebSocket is connected
+      
+      // If we have a selected chat, join it immediately
+      if (selectedChat) {
+        console.log('Auto-joining conversation after connect:', selectedChat.id);
+        newSocket.emit('join_conversation', selectedChat.id);
+      }
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      setIsConnected(false);
+      startPolling(); // Start polling when WebSocket disconnects
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      console.error('Error details:', error.message);
+      console.error('Error type:', error.type);
+      setIsConnected(false);
+      startPolling(); // Start polling on connection error
+    });
+
+    newSocket.on('new_message', (data) => {
+      console.log('New message received:', data);
+      console.log('Current selectedChat:', selectedChat?.id);
+      console.log('Message conversationId:', data.conversationId);
+      console.log('Is current conversation?', selectedChat?.id === data.conversationId);
+      handleNewMessage(data);
+    });
+
+    newSocket.on('message_sent', (data) => {
+      console.log('Message sent confirmation:', data);
+      // Update UI to show message was sent successfully
+      const { conversationId, message } = data;
+      if (message && conversationId) {
+        setChatMessages((prev: any) => ({
+          ...prev,
+          [conversationId]: prev[conversationId]?.map((msg: any) =>
+            msg.id === message.tempId ? { ...msg, id: message._id, isSending: false } : msg
+          ) || [],
+        }));
+      }
+    });
+
+    newSocket.on('conversation_updated', (data) => {
+      console.log('Conversation updated:', data);
+      handleConversationUpdate(data);
+    });
+
+    newSocket.on('error', (error) => {
+      console.error('Socket error:', error);
+    });
+
+    setSocket(newSocket);
+  };
+
+  // Handle new message from WebSocket
+  const handleNewMessage = (data: any) => {
+    const { conversationId, message } = data;
+    
+    if (message) {
+      console.log('Processing new message for conversation:', conversationId);
+      console.log('Message sender:', message.senderId, 'Current user:', user?._id);
+      
+      const newMessage = {
+        id: message._id || Date.now(),
+        text: message.text,
+        sender: message.senderId === user?._id ? 'me' : 'other',
+        time: message.createdAt ? new Date(message.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        files: message.files || []
+      };
+
+      console.log('Created message object:', newMessage);
+
+      // Use setTimeout to avoid setState during render
+      setTimeout(() => {
+        // Always update chat messages
+        setChatMessages((prev: any) => {
+          const currentMessages = prev[conversationId] || [];
+          const messageExists = currentMessages.some((msg: any) => msg.id === newMessage.id);
+          
+          if (messageExists) {
+            console.log('Message already exists, skipping');
+            return prev;
+          }
+          
+          console.log('Adding new message to chat messages');
+          return {
+            ...prev,
+            [conversationId]: [...currentMessages, newMessage],
+          };
+        });
+
+        // Update conversations list
+        setConversations((prev: any[]) => {
+          const updated = prev.map((c: any) => 
+            c._id === conversationId ? {
+              ...c,
+              lastMessage: {
+                text: message.text,
+                sentAt: message.createdAt,
+                sentBy: message.senderId,
+              },
+              unread: message.senderId === user?._id ? c.unread : (c.unread || 0) + 1
+            } : c
+          );
+          
+          // Sort by last message time
+          const sorted = [...updated].sort((a, b) => {
+            const getTime = (c: any) => new Date((c.lastMessage && (c.lastMessage.sentAt || c.lastMessage.createdAt)) || c.updatedAt || 0).getTime();
+            return getTime(b) - getTime(a);
+          });
+          
+          const totalUnread = sorted.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+          DeviceEventEmitter.emit('chat_unread_count', totalUnread);
+          return sorted;
+        });
+
+        // Auto-scroll to bottom if this is the current chat
+        if (selectedChat && selectedChat.id === conversationId) {
+          console.log('Auto-scrolling to bottom for current chat');
+          setTimeout(() => {
+            if (flatListRef.current) {
+              (flatListRef.current as any).scrollToEnd({ animated: true });
+            }
+          }, 100);
+        } else {
+          console.log('Not current chat, no auto-scroll');
+        }
+      }, 0);
+    }
+  };
+
+  // Handle conversation updates
+  const handleConversationUpdate = (data: any) => {
+    const { conversationId, lastMessage, unreadCount } = data;
+    
+    setConversations((prev: any[]) => {
+      const updated = prev.map((c: any) => 
+        c._id === conversationId ? {
+          ...c,
+          lastMessage: lastMessage || c.lastMessage,
+          unread: unreadCount !== undefined ? unreadCount : c.unread
+        } : c
+      );
+      
+      const totalUnread = updated.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+      DeviceEventEmitter.emit('chat_unread_count', totalUnread);
+      return updated;
+    });
+  };
+
+  // Fallback polling for when WebSocket is not available
+  const startPolling = () => {
+    if (pollingInterval) return;
+    
+    console.log('Starting polling fallback');
+    const interval = setInterval(async () => {
+      if (!isConnected && accessToken) {
+        try {
+          console.log('Polling for new messages...');
+          // Use setTimeout to avoid setState during render
+          setTimeout(() => {
+            loadConversations();
+          }, 0);
+        } catch (e) {
+          console.log('Polling error:', e);
+        }
+      }
+    }, 3000); // Poll every 3 seconds for faster updates
+    
+    setPollingInterval(interval);
+  };
+
+  const stopPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  };
 
   const loadConversations = async () => {
     setIsLoadingList(true);
@@ -128,6 +336,24 @@ export default function ChatScreen() {
     });
     navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
     
+    // Join conversation room for real-time updates
+    if (socket) {
+      console.log('Joining conversation room:', convId, 'Socket connected:', isConnected);
+      socket.emit('join_conversation', convId);
+      
+      // If not connected yet, wait a bit and try again
+      if (!isConnected) {
+        setTimeout(() => {
+          if (socket && isConnected) {
+            console.log('Retrying join conversation after connection');
+            socket.emit('join_conversation', convId);
+          }
+        }, 1000);
+      }
+    } else {
+      console.log('No socket available');
+    }
+    
     // Mark conversation as read when opening
     setConversations((prev: any[]) => {
       const updated = prev.map((c: any) => c._id === convId ? { ...c, unread: 0 } : c);
@@ -171,8 +397,53 @@ export default function ChatScreen() {
   };
 
   useEffect(() => {
-    loadConversations();
-  }, []);
+    console.log('ChatScreen useEffect - accessToken:', !!accessToken);
+    
+    // Use setTimeout to avoid setState during render
+    setTimeout(() => {
+      loadConversations();
+      initializeSocket();
+      startPolling();
+    }, 0);
+    
+    return () => {
+      console.log('ChatScreen cleanup');
+      if (socket) {
+        socket.disconnect();
+        setSocket(null);
+      }
+      stopPolling();
+    };
+  }, [accessToken]);
+
+  // Handle app state changes
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        // App came to foreground, refresh conversations
+        loadConversations();
+        if (socket && !isConnected) {
+          socket.connect();
+        }
+      } else if (nextAppState === 'background') {
+        // App went to background, disconnect socket to save battery
+        if (socket) {
+          socket.disconnect();
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [socket, isConnected]);
+
+  // Join conversation when WebSocket connects and we have a selected chat
+  useEffect(() => {
+    if (socket && isConnected && selectedChat) {
+      console.log('WebSocket connected, joining conversation:', selectedChat.id);
+      socket.emit('join_conversation', selectedChat.id);
+    }
+  }, [socket, isConnected, selectedChat]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -300,51 +571,93 @@ export default function ChatScreen() {
     if (!newMessage.trim() || !selectedChat) return;
     const convId = (selectedChat as any).id || (selectedChat as any)._id;
     const text = newMessage.trim();
+    
+    // Optimistically add message to UI
+    const tempMessage = {
+      id: `temp_${Date.now()}`,
+      text: text,
+      sender: 'me',
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      isSending: true
+    };
+    
+    setChatMessages((prev: any) => ({
+      ...prev,
+      [convId]: [...(prev[convId] || []), tempMessage],
+    }));
+    
+    setNewMessage('');
+    setTimeout(() => { if (flatListRef.current) (flatListRef.current as any).scrollToEnd({ animated: true }); }, 10);
+    
     try {
-      const res = await fetch(`${API_URL}/api/chat/messages`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ conversationId: convId, text }),
-      });
-      if (res.status === 401) {
-        await logout();
-        (navigation as any).navigate('Tài khoản');
-        return;
+      // Try WebSocket first if available
+      if (socket && isConnected) {
+        console.log('Sending message via WebSocket:', { conversationId: convId, text, tempId: tempMessage.id });
+        socket.emit('send_message', {
+          conversationId: convId,
+          text: text,
+          tempId: tempMessage.id // Pass tempId for confirmation
+        });
+      } else {
+        console.log('WebSocket not available, using REST API. Socket:', !!socket, 'Connected:', isConnected);
+        // Fallback to REST API
+        const res = await fetch(`${API_URL}/api/chat/messages`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ conversationId: convId, text }),
+        });
+        
+        if (res.status === 401) {
+          await logout();
+          (navigation as any).navigate('Tài khoản');
+          return;
+        }
+        
+        const contentType = res.headers.get('content-type') || '';
+        const raw = await res.text();
+        const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
+        const serverMsg = data.message || data;
+        
+        // Replace temp message with real message
+        const realMessage = {
+          id: serverMsg?._id || `real_${Date.now()}`,
+          text: serverMsg?.text || text,
+          sender: 'me',
+          time: serverMsg?.createdAt ? new Date(serverMsg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          isSending: false
+        };
+        
+        setChatMessages((prev: any) => ({
+          ...prev,
+          [convId]: prev[convId]?.map((msg: any) => 
+            msg.id === tempMessage.id ? realMessage : msg
+          ) || [realMessage],
+        }));
+        
+        // Update conversations list
+        setConversations((prev: any[]) => {
+          const updated = prev.map((c: any) => c._id === convId ? ({
+            ...c,
+            lastMessage: {
+              ...(c.lastMessage || {}),
+              text: serverMsg?.text || text,
+              sentAt: serverMsg?.createdAt || serverMsg?.sentAt || new Date().toISOString(),
+              sentBy: user?._id,
+            },
+          }) : c);
+          const getTime = (c: any) => new Date((c.lastMessage && (c.lastMessage.sentAt || c.lastMessage.createdAt)) || c.updatedAt || 0).getTime();
+          const sorted = [...updated].sort((a, b) => getTime(b) - getTime(a));
+          const totalUnread = sorted.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
+          DeviceEventEmitter.emit('chat_unread_count', totalUnread);
+          return sorted;
+        });
       }
-      const contentType = res.headers.get('content-type') || '';
-      const raw = await res.text();
-      const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
-      const serverMsg = data.message || data;
-      const message = {
-        id: serverMsg?._id || ((chatMessages[convId]?.length || 0) + 1),
-        text: serverMsg?.text || text,
-        sender: 'me',
-        time: serverMsg?.createdAt ? new Date(serverMsg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-      };
+    } catch (e) {
+      // Remove temp message on error
       setChatMessages((prev: any) => ({
         ...prev,
-        [convId]: [ ...(prev[convId] || []), message ],
+        [convId]: prev[convId]?.filter((msg: any) => msg.id !== tempMessage.id) || [],
       }));
-      // Update conversations list: set lastMessage and move to top
-      setConversations((prev: any[]) => {
-        const updated = prev.map((c: any) => c._id === convId ? ({
-          ...c,
-          lastMessage: {
-            ...(c.lastMessage || {}),
-            text: serverMsg?.text || text,
-            sentAt: serverMsg?.createdAt || serverMsg?.sentAt || new Date().toISOString(),
-            sentBy: user?._id,
-          },
-        }) : c);
-        const getTime = (c: any) => new Date((c.lastMessage && (c.lastMessage.sentAt || c.lastMessage.createdAt)) || c.updatedAt || 0).getTime();
-        const sorted = [...updated].sort((a, b) => getTime(b) - getTime(a));
-        const totalUnread = sorted.reduce((sum: number, c: any) => sum + (c.unread || 0), 0);
-        DeviceEventEmitter.emit('chat_unread_count', totalUnread);
-        return sorted;
-      });
-      setNewMessage('');
-      setTimeout(() => { if (flatListRef.current) (flatListRef.current as any).scrollToEnd({ animated: true }); }, 10);
-    } catch (e) {
       Alert.alert('Lỗi', 'Không gửi được tin nhắn');
     }
   };
@@ -417,7 +730,8 @@ export default function ChatScreen() {
   const renderMessage = ({ item }) => (
     <View style={[
       styles.messageContainer,
-      item.sender === 'me' ? styles.myMessage : styles.otherMessage
+      item.sender === 'me' ? styles.myMessage : styles.otherMessage,
+      item.isSending && styles.sendingMessage
     ]}>
       {item.files && item.files.length > 0 && (
         <View style={styles.fileContainer}>
@@ -443,11 +757,27 @@ export default function ChatScreen() {
           {item.text}
         </Text>
       )}
-      <Text style={styles.messageTime}>{item.time}</Text>
+      <View style={styles.messageFooter}>
+        <Text style={styles.messageTime}>{item.time}</Text>
+        {item.sender === 'me' && (
+          <View style={styles.messageStatus}>
+            {item.isSending ? (
+              <Ionicons name="time" size={12} color="#999" />
+            ) : (
+              <Ionicons name="checkmark" size={12} color="#4CAF50" />
+            )}
+          </View>
+        )}
+      </View>
     </View>
   );
 
   const handleBackToList = () => {
+    // Leave conversation room
+    if (selectedChat && socket && isConnected) {
+      socket.emit('leave_conversation', selectedChat.id);
+    }
+    
     setSelectedChat(null);
     // Show bottom navigation again
     navigation.getParent()?.setOptions({
@@ -651,6 +981,10 @@ export default function ChatScreen() {
             </View>
             
             <View style={styles.chatDetailActions}>
+              <View style={styles.connectionStatus}>
+                <View style={[styles.statusDot, { backgroundColor: isConnected ? '#4CAF50' : '#FF6B6B' }]} />
+                <Text style={styles.statusText}>{isConnected ? 'Trực tuyến' : 'Ngoại tuyến'}</Text>
+              </View>
               <TouchableOpacity style={styles.actionButton}>
                 <Ionicons name="call" size={20} color="#4CAF50" />
               </TouchableOpacity>
@@ -986,6 +1320,21 @@ const styles = StyleSheet.create({
     marginLeft: 16,
     padding: 4,
   },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 4,
+  },
+  statusText: {
+    fontSize: 10,
+    color: '#666',
+  },
   messagesContainer: {
     flex: 1,
     backgroundColor: '#f5f5f5',
@@ -1039,7 +1388,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999',
     marginTop: 4,
-    textAlign: 'right',
+  },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+  },
+  messageStatus: {
+    marginLeft: 4,
+  },
+  sendingMessage: {
+    opacity: 0.7,
   },
   inputContainer: {
     flexDirection: 'row',

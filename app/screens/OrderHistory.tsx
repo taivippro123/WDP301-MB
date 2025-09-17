@@ -101,12 +101,18 @@ export default function OrderHistory() {
     try { return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val); } catch { return `${val} VNĐ`; }
   };
 
+
+  // chỉ lấy ngày/tháng/năm
   const formatDateTime = (iso?: string) => {
     if (!iso) return '';
     try {
       const d = new Date(iso);
       if (isNaN(d.getTime())) return iso;
-      return d.toLocaleString('vi-VN');
+      return d.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
     } catch {
       return iso;
     }

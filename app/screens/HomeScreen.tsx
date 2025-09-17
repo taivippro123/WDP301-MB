@@ -18,7 +18,7 @@ import { useAuth } from '../AuthContext';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const { logout } = useAuth();
+  const { logout, accessToken } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [activeTab, setActiveTab] = useState(0);
@@ -26,6 +26,7 @@ export default function HomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [products, setProducts] = useState<any[]>([]);
+  const [wishlistItems, setWishlistItems] = useState<string[]>([]);
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const compactOpacity = useRef(new Animated.Value(0)).current;
@@ -74,12 +75,69 @@ export default function HomeScreen() {
     }
   };
 
+  // Fetch wishlist items
+  const fetchWishlist = async () => {
+    if (!accessToken) return;
+    
+    try {
+      const res = await fetch(`${API_URL}/api/profile/wishlist`, {
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+      
+      if (res.ok) {
+        const json = await res.json();
+        const productIds = (json.items || []).map((item: any) => item.productId);
+        setWishlistItems(productIds);
+      }
+    } catch (e) {
+      // Silently fail for wishlist
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
-  }, []);
+    fetchWishlist();
+  }, [accessToken]);
 
   const onRefresh = () => {
     fetchProducts(true);
+    fetchWishlist();
+  };
+
+  // Add/remove from wishlist
+  const toggleWishlist = async (productId: string) => {
+    if (!accessToken) {
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập để thêm sản phẩm vào danh sách yêu thích');
+      return;
+    }
+
+    const isInWishlist = wishlistItems.includes(productId);
+    
+    try {
+      const res = await fetch(`${API_URL}/api/profile/wishlist${isInWishlist ? `/${productId}` : ''}`, {
+        method: isInWishlist ? 'DELETE' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: isInWishlist ? undefined : JSON.stringify({ productId }),
+      });
+      
+      if (res.ok) {
+        if (isInWishlist) {
+          setWishlistItems(prev => prev.filter(id => id !== productId));
+        } else {
+          setWishlistItems(prev => [...prev, productId]);
+        }
+      } else {
+        Alert.alert('Lỗi', 'Không thể cập nhật danh sách yêu thích');
+      }
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể cập nhật danh sách yêu thích');
+    }
   };
 
   const tabs = ['Dành cho bạn', 'Gần bạn', 'Mới nhất'];
@@ -355,8 +413,15 @@ export default function HomeScreen() {
                   })()}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.favoriteButton}>
-                <Ionicons name="heart-outline" size={20} color="#999" />
+              <TouchableOpacity 
+                style={styles.favoriteButton}
+                onPress={() => toggleWishlist(product._id || product.id)}
+              >
+                <Ionicons 
+                  name={wishlistItems.includes(product._id || product.id) ? "heart" : "heart-outline"} 
+                  size={20} 
+                  color={wishlistItems.includes(product._id || product.id) ? "#FF6B35" : "#999"} 
+                />
               </TouchableOpacity>
             </TouchableOpacity>
           ))}
