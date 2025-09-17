@@ -8,12 +8,13 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import React, { useEffect, useState } from 'react';
-import { Alert, DeviceEventEmitter, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, AppState, DeviceEventEmitter, Text, TouchableOpacity, View } from 'react-native';
 import AuthProvider, { useAuth } from './AuthContext';
 import AccountScreen from './screens/AccountScreen';
 import AddressSettingScreen from './screens/AddressSettingScreen';
 import ChatScreen from './screens/ChatScreen';
+import ChatDetailScreen from './screens/ChatDetailScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import ManageListingsScreen from './screens/ManageListingsScreen';
@@ -29,10 +30,46 @@ const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
 // Create a stack navigator for Chat that can hide bottom tabs
-function ChatStack() {
+function ChatStack({ navigation: parentNavigation }: { navigation: any }) {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ChatList" component={ChatScreen} />
+      <Stack.Screen 
+        name="ChatList" 
+        component={ChatScreen}
+        listeners={{
+          focus: () => {
+            // Show bottom navigation for ChatList
+            console.log('ChatList focused, showing bottom navigation');
+            parentNavigation?.setOptions({
+              tabBarStyle: {
+                backgroundColor: 'white',
+                height: 90,
+                paddingBottom: 2,
+                paddingTop: 10,
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                borderTopWidth: 1,
+                borderTopColor: '#E5E5E7',
+              }
+            });
+          }
+        }}
+      />
+      <Stack.Screen 
+        name="ChatDetail" 
+        component={ChatDetailScreen}
+        listeners={{
+          focus: () => {
+            // Hide bottom navigation for ChatDetail
+            console.log('ChatDetail focused, hiding bottom navigation');
+            parentNavigation?.setOptions({
+              tabBarStyle: { display: 'none' }
+            });
+          }
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -120,13 +157,53 @@ function ProtectedScreen({ children, screenName, navigation }: { children: React
 function AppContent() {
   const { isAuthenticated, login, logout } = useAuth();
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const isUpdatingRef = useRef(false);
+  const lastUpdateRef = useRef(0);
+  const lastCountRef = useRef(0);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('chat_unread_count', (count: number) => {
-      if (typeof count === 'number') setChatUnreadCount(count);
+      if (typeof count === 'number') {
+        // Accept zero immediately; otherwise avoid regressing to a smaller stale count
+        const previous = lastCountRef.current;
+        const shouldUpdate = count === 0 || count > previous || (previous === 0 && count > 0);
+        if (shouldUpdate) {
+          console.log('Updating chat badge count:', count, 'Previous:', previous);
+          lastCountRef.current = count;
+          setChatUnreadCount(count);
+        } else {
+          console.log('Ignoring stale smaller unread count update:', count, 'Current:', previous);
+        }
+      }
     });
     return () => sub.remove();
   }, []);
+
+  // Handle app state changes to force badge update
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        console.log('App became active, forcing badge update');
+        // Force emit current count to ensure badge is updated
+        DeviceEventEmitter.emit('chat_unread_count', lastCountRef.current);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, []);
+
+  // Force update badge when app becomes active
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (lastCountRef.current !== chatUnreadCount) {
+        console.log('Syncing badge count from', chatUnreadCount, 'to', lastCountRef.current);
+        setChatUnreadCount(lastCountRef.current);
+      }
+    }, 5000); // Check every 5 seconds for sync
+
+    return () => clearInterval(interval);
+  }, [chatUnreadCount]);
 
   return (
     <Tab.Navigator
@@ -150,8 +227,26 @@ function AppContent() {
           if (route.name === 'Đăng tin') {
             return <Ionicons name={iconName} size={30} color="white" />;
           }
-          
-          return <Ionicons name={iconName} size={size} color={color} />;
+
+          // Wrap icon to overlay a red dot for unread chat
+          return (
+            <View style={{ position: 'relative' }}>
+              <Ionicons name={iconName} size={size} color={color} />
+              {route.name === 'Chat' && chatUnreadCount > 0 && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    right: -2,
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    backgroundColor: '#FF3B30',
+                  }}
+                />
+              )}
+            </View>
+          );
         },
         tabBarActiveTintColor: '#FFD700',
         tabBarInactiveTintColor: '#8E8E93',
@@ -230,10 +325,20 @@ function AppContent() {
           </ProtectedScreen>
         )}
       </Tab.Screen>
-      <Tab.Screen name="Chat" options={{ tabBarBadge: chatUnreadCount > 0 ? chatUnreadCount : undefined }}>
+      <Tab.Screen 
+        name="Chat" 
+        options={{}}
+        listeners={{
+          tabPress: () => {
+            console.log('Chat tab pressed, forcing badge update');
+            // Force emit current count when tab is pressed
+            DeviceEventEmitter.emit('chat_unread_count', lastCountRef.current);
+          }
+        }}
+      >
         {({ navigation }) => (
           <ProtectedScreen screenName="Chat" navigation={navigation}>
-            <ChatStack />
+            <ChatStack navigation={navigation} />
           </ProtectedScreen>
         )}
       </Tab.Screen>

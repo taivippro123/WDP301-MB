@@ -267,18 +267,53 @@ export default function WishlistScreen() {
     }
   };
 
+  // Helper function to convert UTC to Vietnam timezone
+  const toVietnamTime = (utcDate: Date): Date => {
+    return new Date(utcDate.getTime() + (7 * 60 * 60 * 1000));
+  };
+
+  // Helper function to get start of day in Vietnam timezone
+  const getStartOfDayVietnam = (date: Date): Date => {
+    const vietnamDate = toVietnamTime(date);
+    vietnamDate.setHours(0, 0, 0, 0);
+    return vietnamDate;
+  };
+
   const formatDate = (dateString: string) => {
     try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffTime = Math.abs(now.getTime() - date.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const utcDate = new Date(dateString);
+      const vietnamTime = toVietnamTime(utcDate);
       
-      if (diffDays === 1) return '1 ngày trước';
-      if (diffDays < 7) return `${diffDays} ngày trước`;
-      if (diffDays < 30) return `${Math.ceil(diffDays / 7)} tuần trước`;
-      return `${Math.ceil(diffDays / 30)} tháng trước`;
-    } catch {
+      const now = new Date();
+      const vietnamNow = toVietnamTime(now);
+      
+      // Get start of day in Vietnam timezone
+      const vietnamToday = getStartOfDayVietnam(now);
+      const vietnamAddedDate = getStartOfDayVietnam(utcDate);
+      
+      // Calculate difference in days
+      const diffTime = vietnamToday.getTime() - vietnamAddedDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 0) {
+        // Same day - check if it's today
+        const today = new Date(vietnamNow);
+        const addedDate = new Date(vietnamTime);
+        
+        if (today.getDate() === addedDate.getDate() && 
+            today.getMonth() === addedDate.getMonth() && 
+            today.getFullYear() === addedDate.getFullYear()) {
+          return 'Đã lưu hôm nay';
+        }
+      }
+      
+      if (diffDays === 1) return 'Đã lưu hôm qua';
+      if (diffDays < 7) return `Đã lưu ${diffDays} ngày trước`;
+      if (diffDays < 30) return `Đã lưu ${Math.ceil(diffDays / 7)} tuần trước`;
+      if (diffDays < 365) return `Đã lưu ${Math.ceil(diffDays / 30)} tháng trước`;
+      return `Đã lưu ${Math.ceil(diffDays / 365)} năm trước`;
+    } catch (error) {
+      console.log('Error formatting date:', error);
       return 'Vừa xong';
     }
   };
@@ -365,7 +400,7 @@ export default function WishlistScreen() {
               return loc || 'Không xác định';
             })()}
           </Text>
-          <Text style={styles.dateAdded}>Đã lưu {formatDate(item.addedAt)}</Text>
+          <Text style={styles.dateAdded}>{formatDate(item.addedAt)}</Text>
         </View>
       </View>
 
