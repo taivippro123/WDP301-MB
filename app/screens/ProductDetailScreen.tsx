@@ -16,6 +16,7 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
@@ -62,6 +63,10 @@ export default function ProductDetailScreen() {
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
   const imageScrollViewRef = useRef<ScrollView>(null);
+  const [isVideoModalVisible, setIsVideoModalVisible] = useState(false);
+  const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>(null);
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [shouldAutoplay, setShouldAutoplay] = useState(false);
   
   React.useEffect(() => {
     let mounted = true;
@@ -88,7 +93,84 @@ export default function ProductDetailScreen() {
     return () => { mounted = false; };
   }, [productId]);
 
-  const imageUrls = (product?.images || []).map((u) => ({ url: u }));
+  const imageUrls = (product?.images || []).map((u: any) => ({ url: typeof u === 'string' ? u : (u?.url || u?.secure_url) }));
+
+  const isVideoUrl = (url?: string | null) => {
+    if (!url) return false;
+    const u = url.toLowerCase();
+    return /(\.mp4|\.mov|\.m4v|\.webm|\.ogg)(\?|$)/.test(u) || u.includes('/video/upload');
+  };
+
+  const mediaItems: { type: 'image' | 'video'; url: string }[] = (() => {
+    const imgs: any[] = Array.isArray(product?.images) ? product!.images : [];
+    const vids: any[] = Array.isArray((product as any)?.videos) ? (product as any).videos : [];
+    const toUrl = (x: any) => (typeof x === 'string' ? x : (x?.url || x?.secure_url));
+    const imgItems = imgs
+      .map((x: any) => {
+        const url = toUrl(x);
+        const type = isVideoUrl(url) ? 'video' : 'image';
+        return { type, url } as { type: 'image' | 'video'; url: string };
+      })
+      .filter((m: any) => !!m.url);
+    const vidItems = vids.map((x: any) => ({ type: 'video' as const, url: toUrl(x) })).filter((m: any) => !!m.url);
+    // Put images first, then explicit videos (some images may already be videos by detection)
+    return [...imgItems, ...vidItems];
+  })();
+
+  const getVideoPoster = (url?: string | null): string | undefined => {
+    if (!url) return undefined;
+    try {
+      if (!url.includes('/upload/')) return undefined;
+      // Force resource type to /video/upload for video frame extraction
+      const urlFixedType = url.replace('/image/upload/', '/video/upload/');
+      const [left, rightOrig] = urlFixedType.split('/upload/');
+      const right = rightOrig || '';
+      // Insert so_0 as a chained transformation if not present
+      const hasSo = right.startsWith('so_') || right.includes('/so_') || right.includes(',so_');
+      const rightWithSo = hasSo ? right : `so_0/${right}`;
+      const recomposed = `${left}/upload/${rightWithSo}`;
+      // Ensure .jpg extension and keep any query string
+      const poster = recomposed.replace(/\.(mp4|mov|m4v|webm|ogg)(\?.*)?$/i, '.jpg$2');
+      return poster;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const getPlayableVideoUrl = (url?: string | null): string | undefined => {
+    if (!url) return undefined;
+    try {
+      const isCloudinary = /res\.cloudinary\.com|\.cloudinary\.com/.test(url);
+      if (!isCloudinary) return url;
+      const withCodec = url.replace('/upload/', '/upload/f_mp4,vc_h264,ac_aac/');
+      if (!/\.mp4(\?|$)/i.test(withCodec)) {
+        return withCodec.replace(/(\/v\d+\/[^.?]+)(\?.*)?$/i, '$1.mp4$2');
+      }
+      return withCodec;
+    } catch {
+      return url || undefined;
+    }
+  };
+
+  const playableUrl = React.useMemo(() => {
+    const u = getPlayableVideoUrl(currentVideoUrl) || '';
+    try { console.log('ProductDetail: playableUrl =', u); } catch {}
+    return u;
+  }, [currentVideoUrl]);
+  const player = useVideoPlayer(playableUrl);
+  React.useEffect(() => {
+    try {
+      const poster = getVideoPoster(currentVideoUrl);
+      console.log('ProductDetail: posterUrl =', poster);
+    } catch {}
+    try {
+      if (isVideoModalVisible && playableUrl) {
+        player.play();
+      } else {
+        player.pause();
+      }
+    } catch {}
+  }, [isVideoModalVisible, playableUrl]);
 
   const formatPrice = (price?: number) => {
     if (price === undefined || price === null) return '';
@@ -495,16 +577,30 @@ export default function ProductDetailScreen() {
             onScroll={handleImageScroll}
             scrollEventThrottle={16}
           >
-            {(((product && Array.isArray(product.images)) ? product.images : [null]) as any[]).map((image: any, index: number) => (
+            {(mediaItems.length > 0 ? mediaItems : [{ type: 'image', url: null } as any]).map((m: any, index: number) => (
               <TouchableOpacity 
                 key={index} 
                 style={styles.imageSlide}
-                onPress={() => handleImagePress(index)}
+                onPress={() => {
+                  if (m?.type === 'image' && m?.url) return handleImagePress(index);
+                  if (m?.type === 'video' && m?.url) {
+                    setCurrentVideoUrl(m.url);
+                    setIsVideoModalVisible(true);
+                  }
+                }}
+                activeOpacity={0.9}
               >
-                {image ? (
-                  <Image source={{ uri: image }} style={styles.productImage} resizeMode="cover" />
+                {m?.type === 'video' && m?.url ? (
+                  <View style={[styles.productImage, { overflow: 'hidden', backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }]}> 
+                    {(() => { const p = getVideoPoster(m.url); return p ? <Image source={{ uri: p }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : null; })()}
+                    <View style={{ position: 'absolute', width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                      <Ionicons name="play" size={28} color="#fff" />
+                    </View>
+                  </View>
+                ) : m?.url ? (
+                  <Image source={{ uri: m.url }} style={styles.productImage} resizeMode="cover" />
                 ) : (
-                  <View style={[styles.productImage, { justifyContent: 'center', alignItems: 'center' }]}>
+                  <View style={[styles.productImage, { justifyContent: 'center', alignItems: 'center' }]}> 
                     <Ionicons name="image-outline" size={48} color="#bbb" />
                   </View>
                 )}
@@ -515,13 +611,13 @@ export default function ProductDetailScreen() {
           {/* Image Counter */}
           <View style={styles.imageCounter}>
             <Text style={styles.imageCounterText}>
-              {Math.min(currentImageIndex + 1, product.images?.length || 1)}/{product.images?.length || 1}
+              {Math.min(currentImageIndex + 1, mediaItems.length || 1)}/{mediaItems.length || 1}
             </Text>
           </View>
 
           {/* Image Dots */}
           <View style={styles.dotsContainer}>
-            {Array.isArray(product.images) ? product.images.map((_, index) => (
+            {(mediaItems.length > 0 ? mediaItems : [0]).map((_: any, index: number) => (
               <View
                 key={index}
                 style={[
@@ -529,7 +625,7 @@ export default function ProductDetailScreen() {
                   currentImageIndex === index && styles.activeDot,
                 ]}
               />
-            )) : null}
+            ))}
           </View>
         </View>
 
@@ -699,6 +795,32 @@ export default function ProductDetailScreen() {
                 <Text style={{ color: '#000', fontWeight: '700', marginLeft: isCreatingOrder ? 8 : 0 }}>Mua</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Video Player Modal */}
+      <Modal visible={isVideoModalVisible} transparent animationType="fade" onRequestClose={() => setIsVideoModalVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' }}>
+          <TouchableOpacity style={{ position: 'absolute', top: 50, right: 20, padding: 8 }} onPress={() => setIsVideoModalVisible(false)}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ width: '100%', aspectRatio: 9/16, maxWidth: 600, justifyContent: 'center', alignItems: 'center' }}>
+            {currentVideoUrl ? (
+              <>
+                {(() => { const p = getVideoPoster(currentVideoUrl); return (
+                  <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}>
+                    {p ? <Image source={{ uri: p }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : null}
+                  </View>
+                ); })()}
+                <VideoView
+                  player={player}
+                  style={{ width: '100%', height: '100%' }}
+                  contentFit="contain"
+                  nativeControls
+                />
+              </>
+            ) : null}
           </View>
         </View>
       </Modal>

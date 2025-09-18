@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Animated,
+    Alert,
     Image,
     Keyboard,
     RefreshControl,
@@ -197,6 +198,30 @@ export default function HomeScreen() {
     }
   };
 
+  const getFirstMediaUrl = (p: any): string | null => {
+    const imgs: any[] = Array.isArray(p?.images) ? p.images : [];
+    const vids: any[] = Array.isArray((p as any)?.videos) ? (p as any).videos : [];
+    const first = (imgs[0] || vids[0]) || null;
+    if (!first) return null;
+    return typeof first === 'string' ? first : (first.url || first.secure_url || null);
+  };
+
+  const isVideoUrl = (url?: string | null): boolean => {
+    if (!url) return false;
+    const u = url.toLowerCase();
+    return /(\.mp4|\.mov|\.m4v|\.webm|\.ogg)(\?|$)/.test(u) || u.includes('/video/upload');
+  };
+
+  const getVideoPoster = (url?: string | null): string | undefined => {
+    if (!url) return undefined;
+    try {
+      const withSo = url.replace('/video/upload/', '/video/upload/so_0/');
+      return withSo.replace(/\.(mp4|mov|m4v|webm|ogg)(\?.*)?$/i, '.jpg$2');
+    } catch {
+      return undefined;
+    }
+  };
+
   return (
     <TouchableWithoutFeedback onPress={dismissKeyboard}>
       <View style={styles.container}>
@@ -380,11 +405,26 @@ export default function HomeScreen() {
               onPress={() => (navigation as any).navigate('ProductDetail', { productId: product._id || product.id })}
             >
               <View style={styles.productImage}>
-                {product.images && product.images.length > 0 ? (
-                  <Image source={{ uri: product.images[0] }} style={{ width: '100%', height: '100%', borderRadius: 8 }} />
-                ) : (
-                  <Ionicons name="image-outline" size={40} color="#ccc" />
-                )}
+                {(() => {
+                  const url = getFirstMediaUrl(product);
+                  if (!url) return <Ionicons name="image-outline" size={40} color="#ccc" />;
+                  if (isVideoUrl(url)) {
+                    const poster = getVideoPoster(url);
+                    return (
+                      <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden', backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+                        {poster ? (
+                          <Image source={{ uri: poster }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                        ) : (
+                          <Ionicons name="videocam" size={32} color="#999" />
+                        )}
+                        <View style={{ position: 'absolute', width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name="play" size={20} color="#fff" />
+                        </View>
+                      </View>
+                    );
+                  }
+                  return <Image source={{ uri: url }} style={{ width: '100%', height: '100%', borderRadius: 8 }} />;
+                })()}
               </View>
               <View style={styles.productInfo}>
                 <Text style={styles.productTitle} numberOfLines={2}>

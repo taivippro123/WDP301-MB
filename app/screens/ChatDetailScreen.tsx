@@ -43,6 +43,10 @@ export default function ChatDetailScreen() {
   const [isConnected, setIsConnected] = useState(false);
   const [webSocketFailed, setWebSocketFailed] = useState(false);
   const flatListRef = useRef(null);
+  // Track if user is near the bottom to decide auto-scroll behavior
+  const isNearBottomRef = useRef(true);
+  // Ensure we only auto-scroll once after initial load
+  const didInitialAutoScrollRef = useRef(false);
   // Track seen message IDs per conversation to avoid duplicates
   const seenMessageIdsRef = useRef<{ [key: string]: Set<string> }>({});
 
@@ -320,9 +324,9 @@ export default function ChatDetailScreen() {
         };
       });
 
-      // Auto-scroll to bottom only for new messages from others
-      if (newMessage.sender === 'other') {
-        console.log('ChatDetail: Auto-scrolling to bottom for new message from other');
+      // Auto-scroll only if user is already near the bottom
+      if (newMessage.sender === 'other' && isNearBottomRef.current) {
+        console.log('ChatDetail: Auto-scrolling to bottom for new message from other (user near bottom)');
         setTimeout(() => {
           if (flatListRef.current) {
             (flatListRef.current as any).scrollToEnd({ animated: true });
@@ -393,10 +397,11 @@ export default function ChatDetailScreen() {
         };
       });
       
-      // Auto-scroll to bottom after loading messages
+      // Auto-scroll to bottom after initial load only once per mount/conv
       setTimeout(() => { 
-        if (flatListRef.current) {
-          (flatListRef.current as any).scrollToEnd({ animated: true }); 
+        if (flatListRef.current && !didInitialAutoScrollRef.current) {
+          (flatListRef.current as any).scrollToEnd({ animated: false });
+          didInitialAutoScrollRef.current = true;
         }
       }, 100);
       // Seed seen ids for loaded list
@@ -555,7 +560,7 @@ export default function ChatDetailScreen() {
     });
     
     setNewMessage('');
-    // Auto-scroll after sending message
+    // Auto-scroll after sending my own message (expected behavior)
     setTimeout(() => { 
       if (flatListRef.current) {
         (flatListRef.current as any).scrollToEnd({ animated: true }); 
@@ -759,6 +764,10 @@ export default function ChatDetailScreen() {
                 </View>
                 <View>
                   <Text style={styles.chatDetailName}>{selectedChat.name}</Text>
+                  <View style={[styles.connectionStatus, { paddingLeft: 0, marginRight: 0, marginTop: 2 }]}>
+                    <View style={[styles.statusDot, { backgroundColor: isConnected ? '#4CAF50' : '#FF6B6B' }]} />
+                    <Text style={styles.statusText}>{isConnected ? 'Trực tuyến' : 'Ngoại tuyến'}</Text>
+                  </View>
                   <Text style={styles.chatDetailProduct} numberOfLines={1}>
                     {selectedChat.product}
                   </Text>
@@ -766,10 +775,6 @@ export default function ChatDetailScreen() {
               </View>
               
               <View style={styles.chatDetailActions}>
-                <View style={styles.connectionStatus}>
-                  <View style={[styles.statusDot, { backgroundColor: isConnected ? '#4CAF50' : '#FF6B6B' }]} />
-                  <Text style={styles.statusText}>{isConnected ? 'Trực tuyến' : 'Ngoại tuyến'}</Text>
-                </View>
                 <TouchableOpacity style={styles.actionButton}>
                   <Ionicons name="call" size={20} color="#4CAF50" />
                 </TouchableOpacity>
@@ -792,29 +797,18 @@ export default function ChatDetailScreen() {
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
                   removeClippedSubviews={true}
-                  maxToRenderPerBatch={3}
-                  updateCellsBatchingPeriod={200}
-                  initialNumToRender={5}
-                  windowSize={3}
-                  getItemLayout={(data, index) => {
-                    const item = data[index];
-                    const hasFiles = item?.files?.length > 0;
-                    const height = hasFiles ? 120 : 80;
-                    return {
-                      length: height,
-                      offset: height * index,
-                      index,
-                    };
+                  initialNumToRender={10}
+                  scrollEventThrottle={16}
+                  onScroll={(e) => {
+                    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+                    const threshold = 80; // px
+                    isNearBottomRef.current = distanceFromBottom <= threshold;
                   }}
                   onContentSizeChange={() => {
                     // Don't auto-scroll on content size change to prevent scroll issues
                   }}
-                  onLayout={() => {
-                    // Only auto-scroll on initial load
-                    if (flatListRef.current) {
-                      flatListRef.current.scrollToEnd({ animated: false });
-                    }
-                  }}
+                  // Avoid auto-scrolling on layout; handled after initial load
                 />
               </View>
             </TouchableWithoutFeedback>
@@ -908,6 +902,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#000',
+    marginTop: 10,
   },
   chatDetailProduct: {
     fontSize: 12,
@@ -925,12 +920,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 8,
+    paddingLeft: 30,
   },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: 4,
+    marginRight: 4
   },
   statusText: {
     fontSize: 10,
