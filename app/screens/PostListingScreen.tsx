@@ -3,8 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
-    Alert,
     ActivityIndicator,
+    Alert,
     FlatList,
     Image,
     Keyboard,
@@ -215,8 +215,8 @@ export default function PostListingScreen() {
                     }
                     const msg = data?.error || 'Dữ liệu không hợp lệ';
                     Alert.alert('Lỗi', msg);
-                    return;
-                }
+            return;
+        }
                 throw new Error(data?.message || data?.error || 'Không thể tạo sản phẩm');
             }
             // Success: data is the created product object
@@ -503,7 +503,7 @@ export default function PostListingScreen() {
 
                         {/* Submit */}
                         <View style={styles.section}>      
-                            <TouchableOpacity
+                                    <TouchableOpacity 
                                 style={[styles.submitButton, submitting ? { opacity: 0.6 } : null]}
                                 onPress={handleSubmit}
                                 disabled={submitting}
@@ -511,7 +511,7 @@ export default function PostListingScreen() {
                                 {submitting ? (
                                     <ActivityIndicator size="small" color="#000" />
                                 ) : (
-                                    <Text style={styles.submitButtonText}>Đăng tin</Text>
+                                <Text style={styles.submitButtonText}>Đăng tin</Text>
                                 )}
                             </TouchableOpacity>
                         </View>

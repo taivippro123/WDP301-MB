@@ -7,7 +7,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
-  AppState,
   DeviceEventEmitter,
   FlatList,
   Image,
@@ -15,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -42,6 +42,8 @@ export default function ChatDetailScreen() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [webSocketFailed, setWebSocketFailed] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<any[]>([]);
+  const [tempFilesCache, setTempFilesCache] = useState<Record<string, any[]>>({});
   const flatListRef = useRef(null);
   // Track if user is near the bottom to decide auto-scroll behavior
   const isNearBottomRef = useRef(true);
@@ -403,7 +405,7 @@ export default function ChatDetailScreen() {
           (flatListRef.current as any).scrollToEnd({ animated: false });
           didInitialAutoScrollRef.current = true;
         }
-      }, 100);
+      }, 200); // Tăng delay để đảm bảo messages đã render xong
       // Seed seen ids for loaded list
       try {
         if (messages?.length) {
@@ -436,35 +438,176 @@ export default function ChatDetailScreen() {
     }
   };
 
+  // Send message with files directly via /chat/messages/files
+  const sendMessageWithFiles = React.useCallback(async (convId: string, text: string, files: any[]) => {
+    if (!convId) return null;
+    
+    try {
+      setUploadingFiles(true);
+      
+      console.log('ChatDetail: Sending message with files:', {
+        conversationId: convId,
+        text,
+        fileCount: files.length,
+        files: files.map(f => ({ name: f.name, type: f.type, uri: f.uri.substring(0, 50) + '...' }))
+      });
+      
+      // Convert files to base64 (already compressed when selected)
+      const filePromises = files.map(async (file) => {
+        try {
+          const response = await fetch(file.uri);
+          const blob = await response.blob();
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              resolve({
+                name: file.name,
+                type: file.type,
+                data: reader.result, // base64 data
+              });
+            };
+            reader.readAsDataURL(blob);
+          });
+        } catch (error) {
+          console.error('Error converting file to base64:', error);
+          return null;
+        }
+      });
+      
+      const base64Files = await Promise.all(filePromises);
+      const validFiles = base64Files.filter(Boolean);
+      
+      console.log('ChatDetail: Converted files to base64:', validFiles.length);
+      
+      // Check file size and warn if too large
+      const totalSize = validFiles.reduce((total, file) => {
+        const base64Size = file.data.length * 0.75; // Approximate binary size
+        return total + base64Size;
+      }, 0);
+      
+      console.log('ChatDetail: Total file size (bytes):', totalSize);
+      
+      if (totalSize > 50 * 1024 * 1024) { // 50MB limit (tăng từ 5MB)
+        Alert.alert(
+          'File quá lớn', 
+          'Tổng kích thước file vượt quá 50MB. Vui lòng chọn ảnh nhỏ hơn.',
+          [{ text: 'OK' }]
+        );
+        return null;
+      }
+      
+      let response;
+      
+      try {
+        // Try JSON with base64 first
+        response = await fetch(`${API_URL}/api/chat/messages/files`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({
+            conversationId: convId,
+            text: text,
+            files: validFiles,
+          }),
+        });
+      } catch (error) {
+        console.log('JSON method failed, trying FormData fallback:', error);
+        
+        // Fallback to FormData
+        const formData = new FormData();
+        files.forEach((file, index) => {
+          formData.append('files', {
+            uri: file.uri,
+            type: file.type,
+            name: file.name || `file_${index}.jpg`,
+          } as any);
+        });
+        formData.append('conversationId', convId);
+        formData.append('text', text);
+        
+        response = await fetch(`${API_URL}/api/chat/messages/files`, {
+          method: 'POST',
+          headers: {
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: formData,
+        });
+      }
+      
+      console.log('ChatDetail: Message with files response status:', response.status);
+      
+      if (response.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return null;
+      }
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('ChatDetail: Message with files error response:', errorText);
+        throw new Error(`Send message with files failed: ${response.status} - ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log('ChatDetail: Message with files response:', result);
+      
+      return result.message || result;
+    } catch (error) {
+      console.error('ChatDetail: Send message with files error:', error);
+      Alert.alert('Lỗi', `Không thể gửi tin nhắn với file: ${error.message || 'Unknown error'}`);
+      return null;
+    } finally {
+      setUploadingFiles(false);
+    }
+  }, [accessToken, logout, navigation]);
+
   // Send message via REST API
-  const sendMessageViaREST = React.useCallback(async (convId: string, text: string, tempMessage: any) => {
+  const sendMessageViaREST = React.useCallback(async (convId: string, text: string, tempMessage: any, files: any[] = []) => {
     try {
       console.log('=== CHAT DETAIL: SENDING MESSAGE VIA REST API ===');
       console.log('ConversationId:', convId);
       console.log('Text:', text);
+      console.log('Files:', files);
       console.log('TempMessage:', tempMessage);
       console.log('================================================');
       
-      const res = await fetch(`${API_URL}/api/chat/messages`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ conversationId: convId, text, files: [] }),
-      });
+      let serverMsg;
       
-      if (res.status === 401) {
-        await logout();
-        (navigation as any).navigate('Tài khoản');
-        return;
+      // If has files, use /chat/messages/files endpoint
+      if (files.length > 0) {
+        serverMsg = await sendMessageWithFiles(convId, text, files);
+        if (!serverMsg) {
+          throw new Error('Failed to send message with files');
+        }
+      } else {
+        // If no files, use regular /chat/messages endpoint
+        const res = await fetch(`${API_URL}/api/chat/messages`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ 
+            conversationId: convId, 
+            text, 
+            files: [] 
+          }),
+        });
+        
+        if (res.status === 401) {
+          await logout();
+          (navigation as any).navigate('Tài khoản');
+          return;
+        }
+        
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        
+        const contentType = res.headers.get('content-type') || '';
+        const raw = await res.text();
+        const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
+        serverMsg = data.message || data;
       }
-      
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      
-      const contentType = res.headers.get('content-type') || '';
-      const raw = await res.text();
-      const data = contentType.includes('application/json') ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
-      const serverMsg = data.message || data;
       
       console.log('ChatDetail: REST API response:', serverMsg);
       
@@ -473,9 +616,13 @@ export default function ChatDetailScreen() {
         text: serverMsg?.text || text,
         sender: 'me',
         time: serverMsg?.createdAt ? new Date(serverMsg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        files: (serverMsg?.files && serverMsg.files.length > 0) ? serverMsg.files : tempMessage.files, // Always use temp files if server files empty
+        type: (files.length > 0) ? 'file' : 'text', // Force type based on input files
         isSending: false, // Message is sent
         serverId: serverMsg?._id // Store server ID separately
       };
+      
+      console.log('ChatDetail: Real message files:', realMessage.files);
       
       console.log('ChatDetail: Created real message from REST API:', realMessage);
       // Mark as seen to avoid WS echo dup
@@ -516,26 +663,143 @@ export default function ChatDetailScreen() {
         [convId]: prev[convId]?.filter((msg: any) => msg.id !== tempMessage.id) || [],
       }));
     }
+  }, [sendMessageWithFiles, logout, navigation]);
+
+  // Handle image picker
+  const handleImagePicker = React.useCallback(async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.granted === false) {
+        Alert.alert('Lỗi', 'Cần quyền truy cập thư viện ảnh');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.3, // Reduce quality to compress file size
+        maxWidth: 800, // Reduce max width
+        maxHeight: 800, // Reduce max height
+      });
+
+      console.log('Image picker result:', result);
+
+      if (!result.canceled && result.assets.length > 0) {
+        const newFiles = result.assets.map(asset => ({
+          uri: asset.uri,
+          type: asset.mimeType || 'image/jpeg', // Use mimeType from ImagePicker
+          name: asset.fileName || `image_${Date.now()}.jpg`,
+        }));
+        console.log('Selected files:', newFiles);
+        setSelectedFiles(prev => {
+          const updated = [...prev, ...newFiles];
+          console.log('Updated selected files:', updated);
+          return updated;
+        });
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Lỗi', 'Không thể chọn ảnh');
+    }
+  }, []);
+
+  // Handle document picker
+  const handleDocumentPicker = React.useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        const newFiles = result.assets.map(asset => ({
+          uri: asset.uri,
+          type: asset.mimeType || 'application/octet-stream',
+          name: asset.name || `document_${Date.now()}`,
+        }));
+        console.log('Selected document files:', newFiles);
+        setSelectedFiles(prev => {
+          const updated = [...prev, ...newFiles];
+          console.log('Updated selected files after document:', updated);
+          return updated;
+        });
+      }
+    } catch (error) {
+      console.error('Document picker error:', error);
+      Alert.alert('Lỗi', 'Không thể chọn tài liệu');
+    }
+  }, []);
+
+  // Show file picker options
+  const showFilePicker = React.useCallback(() => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Hủy', 'Chọn ảnh', 'Chọn tài liệu'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            handleImagePicker();
+          } else if (buttonIndex === 2) {
+            handleDocumentPicker();
+          }
+        }
+      );
+    } else {
+      Alert.alert(
+        'Chọn file',
+        'Bạn muốn chọn loại file nào?',
+        [
+          { text: 'Hủy', style: 'cancel' },
+          { text: 'Chọn ảnh', onPress: handleImagePicker },
+          { text: 'Chọn tài liệu', onPress: handleDocumentPicker },
+        ]
+      );
+    }
+  }, [handleImagePicker, handleDocumentPicker]);
+
+  // Remove selected file
+  const removeSelectedFile = React.useCallback((index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
   // Send message
   const sendMessage = React.useCallback(async () => {
-    if (!newMessage.trim() || !conversationId) return;
+    if ((!newMessage.trim() && selectedFiles.length === 0) || !conversationId) return;
     
     const text = newMessage.trim();
+    const files = [...selectedFiles];
+    
+    console.log('ChatDetail: Sending message with files:', {
+      text,
+      filesCount: files.length,
+      files: files.map(f => ({ name: f.name, type: f.type, uri: f.uri?.substring(0, 50) + '...' }))
+    });
     
     const tempMessage = {
       id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       text: text,
       sender: 'me',
       time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      files: files.map(f => ({
+        name: f.name,
+        type: f.type,
+        uri: f.uri,
+        url: f.uri // Add url field for display
+      })),
+      type: files.length > 0 ? 'file' : 'text',
       isSending: true
     };
     
     console.log('=== CHAT DETAIL: SENDING MESSAGE ===');
     console.log('ConversationId:', conversationId);
     console.log('Text:', text);
+    console.log('Files:', files);
     console.log('TempMessage:', tempMessage);
+    console.log('TempMessage files:', tempMessage.files);
+    console.log('TempMessage files length:', tempMessage.files?.length);
     console.log('====================================');
     
     setChatMessages((prev: any) => {
@@ -560,6 +824,7 @@ export default function ChatDetailScreen() {
     });
     
     setNewMessage('');
+    setSelectedFiles([]);
     // Auto-scroll after sending my own message (expected behavior)
     setTimeout(() => { 
       if (flatListRef.current) {
@@ -569,8 +834,8 @@ export default function ChatDetailScreen() {
     
     try {
       // Always use REST API for sending messages to avoid WebSocket issues
-      console.log('ChatDetail: Sending message via REST API:', { conversationId, text, tempId: tempMessage.id });
-      await sendMessageViaREST(conversationId, text, tempMessage);
+      console.log('ChatDetail: Sending message via REST API:', { conversationId, text, files, tempId: tempMessage.id });
+      await sendMessageViaREST(conversationId, text, tempMessage, files);
     } catch (e) {
       console.error('ChatDetail: Error sending message:', e);
       setChatMessages((prev: any) => ({
@@ -579,7 +844,7 @@ export default function ChatDetailScreen() {
       }));
       Alert.alert('Lỗi', 'Không gửi được tin nhắn');
     }
-  }, [newMessage, conversationId, socket, isConnected, sendMessageViaREST]);
+  }, [newMessage, selectedFiles, conversationId, socket, isConnected, sendMessageViaREST]);
 
   // Get messages for current chat
   const getCurrentMessages = React.useCallback(() => {
@@ -588,54 +853,68 @@ export default function ChatDetailScreen() {
   }, [conversationId, chatMessages]);
 
   // Render message
-  const renderMessage = React.useCallback(({ item }) => (
-    <View style={[
-      styles.messageContainer,
-      item.sender === 'me' ? styles.myMessage : styles.otherMessage,
-      item.isSending && styles.sendingMessage
-    ]}>
-      {item.files && item.files.length > 0 && (
-        <View style={styles.fileContainer}>
-          {item.files.map((file: any, index: number) => (
-            <View key={index} style={styles.fileItem}>
-              {file.type?.startsWith('image/') ? (
-                <Image 
-                  source={{ uri: file.url }} 
-                  style={styles.fileImage}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.fileIcon}>
-                  <Ionicons name="document" size={24} color="#666" />
-                  <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
+    const renderMessage = React.useCallback(({ item }) => {
+      console.log('Rendering message:', {
+        id: item.id,
+        text: item.text,
+        files: item.files,
+        filesLength: item.files?.length,
+        type: item.type
+      });
+    
+    return (
+      <View style={[
+        styles.messageContainer,
+        item.sender === 'me' ? styles.myMessage : styles.otherMessage,
+        item.isSending && styles.sendingMessage
+      ]}>
+        {item.files && item.files.length > 0 && (
+          <View style={styles.fileContainer}>
+            {item.files.map((file: any, index: number) => {
+              console.log('Rendering file:', file);
+              return (
+                <View key={index} style={styles.fileItem}>
+                  {file.type?.startsWith('image/') || file.type === 'image' || file.name?.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                    <Image 
+                      source={{ uri: file.url || file.uri }} 
+                      style={styles.fileImage}
+                      resizeMode="cover"
+                      onError={(e) => console.log('Image load error:', e)}
+                    />
+                  ) : (
+                    <View style={styles.fileIcon}>
+                      <Ionicons name="document" size={24} color="#666" />
+                      <Text style={styles.fileName} numberOfLines={1}>{file.name}</Text>
+                    </View>
+                  )}
                 </View>
-              )}
-            </View>
-          ))}
-        </View>
-      )}
-      {item.text && (
-        <Text style={[
-          styles.messageText,
-          item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
-        ]}>
-          {item.text}
-        </Text>
-      )}
-      <View style={styles.messageFooter}>
-        <Text style={styles.messageTime}>{item.time}</Text>
-        {item.sender === 'me' && (
-          <View style={styles.messageStatus}>
-            {item.isSending ? (
-              <Ionicons name="time" size={12} color="#999" />
-            ) : (
-              <Ionicons name="checkmark" size={12} color="#4CAF50" />
-            )}
+              );
+            })}
           </View>
         )}
+        {item.text && (
+          <Text style={[
+            styles.messageText,
+            item.sender === 'me' ? styles.myMessageText : styles.otherMessageText
+          ]}>
+            {item.text}
+          </Text>
+        )}
+        <View style={styles.messageFooter}>
+          <Text style={styles.messageTime}>{item.time}</Text>
+          {item.sender === 'me' && (
+            <View style={styles.messageStatus}>
+              {item.isSending ? (
+                <Ionicons name="time" size={12} color="#999" />
+              ) : (
+                <Ionicons name="checkmark" size={12} color="#4CAF50" />
+              )}
+            </View>
+          )}
+        </View>
       </View>
-    </View>
-  ), []);
+    );
+  }, []);
 
   // Handle back to list
   const handleBackToList = React.useCallback(async () => {
@@ -689,6 +968,18 @@ export default function ChatDetailScreen() {
       // Join sẽ được thực hiện ở effect khi socket connected/conversationId đổi
     }
   }, [conversationId, peerName, socket, isConnected]); // Added socket and isConnected dependencies
+
+  // Auto scroll to bottom when messages change
+  useEffect(() => {
+    const currentMessages = getCurrentMessages();
+    if (currentMessages.length > 0) {
+      setTimeout(() => {
+        if (flatListRef.current) {
+          (flatListRef.current as any).scrollToEnd({ animated: true });
+        }
+      }, 100);
+    }
+  }, [chatMessages, conversationId]);
 
   // Initialize WebSocket
   useEffect(() => {
@@ -813,11 +1104,44 @@ export default function ChatDetailScreen() {
               </View>
             </TouchableWithoutFeedback>
 
+            {/* Selected Files Preview */}
+            {selectedFiles.length > 0 && (
+              <View style={styles.selectedFilesContainer}>
+                <Text style={styles.selectedFilesTitle}>Files đã chọn ({selectedFiles.length}):</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {selectedFiles.map((file, index) => (
+                    <View key={index} style={styles.selectedFileItem}>
+                      {file.type?.startsWith('image/') ? (
+                        <Image 
+                          source={{ uri: file.uri }} 
+                          style={styles.selectedFileImage}
+                          onError={(e) => console.log('Image load error:', e)}
+                        />
+                      ) : (
+                        <View style={styles.selectedFileIcon}>
+                          <Ionicons name="document" size={24} color="#666" />
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        style={styles.removeFileButton}
+                        onPress={() => removeSelectedFile(index)}
+                      >
+                        <Ionicons name="close" size={16} color="#fff" />
+                      </TouchableOpacity>
+                      <Text style={styles.selectedFileName} numberOfLines={1}>
+                        {file.name}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
             {/* Input */}
             <View style={styles.inputContainer}>
               <TouchableOpacity 
                 style={[styles.attachButton, uploadingFiles && styles.uploadingButton]}
-                onPress={() => {}}
+                onPress={showFilePicker}
                 disabled={uploadingFiles}
               >
                 {uploadingFiles ? (
@@ -840,11 +1164,18 @@ export default function ChatDetailScreen() {
               />
               
               <TouchableOpacity 
-                style={[styles.sendButton, !newMessage.trim() && styles.disabledButton]}
+                style={[
+                  styles.sendButton, 
+                  (!newMessage.trim() && selectedFiles.length === 0) && styles.disabledButton
+                ]}
                 onPress={sendMessage}
-                disabled={!newMessage.trim()}
+                disabled={!newMessage.trim() && selectedFiles.length === 0}
               >
-                <Ionicons name="send" size={20} color={!newMessage.trim() ? "#ccc" : "#fff"} />
+                <Ionicons 
+                  name="send" 
+                  size={20} 
+                  color={(!newMessage.trim() && selectedFiles.length === 0) ? "#ccc" : "#fff"} 
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -1065,5 +1396,55 @@ const styles = StyleSheet.create({
   },
   uploadingButton: {
     opacity: 0.7,
+  },
+  selectedFilesContainer: {
+    backgroundColor: '#f8f8f8',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  selectedFilesTitle: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  selectedFileItem: {
+    position: 'relative',
+    marginRight: 8,
+    width: 80,
+    alignItems: 'center',
+  },
+  selectedFileImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: '#e0e0e0',
+  },
+  selectedFileIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeFileButton: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ff4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectedFileName: {
+    fontSize: 10,
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

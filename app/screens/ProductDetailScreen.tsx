@@ -1,22 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useRef, useState } from 'react';
 import {
-  Alert,
-  Animated,
-  Dimensions,
-  Image,
-  Linking,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Image,
+    Linking,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
@@ -441,13 +441,13 @@ export default function ProductDetailScreen() {
         return;
       }
       const res = await fetch(`${API_URL}/api/chat/start`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-        body: JSON.stringify({ productId: product._id, sellerId: product.seller._id }),
-      });
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ productId: product._id, sellerId: product.seller._id }),
+        });
       if (res.status === 401) {
         await logout();
         (navigation as any).navigate('Tài khoản');
@@ -600,7 +600,7 @@ export default function ProductDetailScreen() {
                 ) : m?.url ? (
                   <Image source={{ uri: m.url }} style={styles.productImage} resizeMode="cover" />
                 ) : (
-                  <View style={[styles.productImage, { justifyContent: 'center', alignItems: 'center' }]}> 
+                  <View style={[styles.productImage, { justifyContent: 'center', alignItems: 'center' }]}>
                     <Ionicons name="image-outline" size={48} color="#bbb" />
                   </View>
                 )}
@@ -674,16 +674,16 @@ export default function ProductDetailScreen() {
                 })()}</Text>
               </View>
               <View style={styles.sellerActions}>
-                <TouchableOpacity style={styles.chatIconButton} onPress={handleChatPress}>
-                  <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
-                  <Text style={styles.chatButtonText}>Chat</Text>
-                </TouchableOpacity>
+              <TouchableOpacity style={styles.chatIconButton} onPress={handleChatPress}>
+                <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+                <Text style={styles.chatButtonText}>Chat</Text>
+              </TouchableOpacity>
                 <TouchableOpacity style={styles.buyInlineButton} onPress={handleBuyPress}>
                   <Ionicons name="cart" size={20} color="#fff" />
                   <Text style={styles.buyInlineText}>Mua</Text>
-                </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             </View>
+          </View>
           </View>
           )}
 

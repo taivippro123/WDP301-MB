@@ -1,9 +1,8 @@
 // @ts-nocheck
 import { useNavigation, useRoute } from '@react-navigation/native';
-import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
+import React from 'react';
 import ChatListScreen from './ChatListScreen';
-import ChatDetailScreen from './ChatDetailScreen';
 
 const Stack = createStackNavigator();
 
