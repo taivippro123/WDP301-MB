@@ -452,42 +452,15 @@ export default function ChatDetailScreen() {
         files: files.map(f => ({ name: f.name, type: f.type, uri: f.uri.substring(0, 50) + '...' }))
       });
       
-      // Convert files to base64 (already compressed when selected)
-      const filePromises = files.map(async (file) => {
-        try {
-          const response = await fetch(file.uri);
-          const blob = await response.blob();
-          return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              resolve({
-                name: file.name,
-                type: file.type,
-                data: reader.result, // base64 data
-              });
-            };
-            reader.readAsDataURL(blob);
-          });
-        } catch (error) {
-          console.error('Error converting file to base64:', error);
-          return null;
-        }
-      });
-      
-      const base64Files = await Promise.all(filePromises);
-      const validFiles = base64Files.filter(Boolean);
-      
-      console.log('ChatDetail: Converted files to base64:', validFiles.length);
-      
-      // Check file size and warn if too large
-      const totalSize = validFiles.reduce((total, file) => {
-        const base64Size = file.data.length * 0.75; // Approximate binary size
-        return total + base64Size;
+      // Check file size and warn if too large (approximate check)
+      const totalSize = files.reduce((total, file) => {
+        // Rough estimation based on file name and type
+        return total + (file.size || 1024 * 1024); // Default 1MB if size unknown
       }, 0);
       
-      console.log('ChatDetail: Total file size (bytes):', totalSize);
+      console.log('ChatDetail: Estimated total file size (bytes):', totalSize);
       
-      if (totalSize > 50 * 1024 * 1024) { // 50MB limit (tăng từ 5MB)
+      if (totalSize > 50 * 1024 * 1024) { // 50MB limit
         Alert.alert(
           'File quá lớn', 
           'Tổng kích thước file vượt quá 50MB. Vui lòng chọn ảnh nhỏ hơn.',
@@ -496,45 +469,32 @@ export default function ChatDetailScreen() {
         return null;
       }
       
-      let response;
+      // Use FormData directly (server only supports multipart/form-data)
+      const formData = new FormData();
+      files.forEach((file, index) => {
+        formData.append('files', {
+          uri: file.uri,
+          type: file.type,
+          name: file.name || `file_${index}.jpg`,
+        } as any);
+      });
+      formData.append('conversationId', convId);
+      formData.append('text', text);
       
-      try {
-        // Try JSON with base64 first
-        response = await fetch(`${API_URL}/api/chat/messages/files`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          },
-          body: JSON.stringify({
-            conversationId: convId,
-            text: text,
-            files: validFiles,
-          }),
-        });
-      } catch (error) {
-        console.log('JSON method failed, trying FormData fallback:', error);
-        
-        // Fallback to FormData
-        const formData = new FormData();
-        files.forEach((file, index) => {
-          formData.append('files', {
-            uri: file.uri,
-            type: file.type,
-            name: file.name || `file_${index}.jpg`,
-          } as any);
-        });
-        formData.append('conversationId', convId);
-        formData.append('text', text);
-        
-        response = await fetch(`${API_URL}/api/chat/messages/files`, {
-          method: 'POST',
-          headers: {
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          },
-          body: formData,
-        });
-      }
+      console.log('ChatDetail: Sending FormData with files:', {
+        conversationId: convId,
+        text: text,
+        fileCount: files.length,
+        files: files.map(f => ({ name: f.name, type: f.type }))
+      });
+      
+      const response = await fetch(`${API_URL}/api/chat/messages/files`, {
+        method: 'POST',
+        headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: formData,
+      });
       
       console.log('ChatDetail: Message with files response status:', response.status);
       
@@ -547,13 +507,34 @@ export default function ChatDetailScreen() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('ChatDetail: Message with files error response:', errorText);
-        throw new Error(`Send message with files failed: ${response.status} - ${errorText}`);
+        let errorMessage = `Send message with files failed: ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+          if (errorData.details) {
+            errorMessage += ` - ${errorData.details}`;
+          }
+        } catch (e) {
+          errorMessage += ` - ${errorText}`;
+        }
+        throw new Error(errorMessage);
       }
       
       const result = await response.json();
       console.log('ChatDetail: Message with files response:', result);
       
-      return result.message || result;
+      // Validate response
+      if (!result.message) {
+        throw new Error('Invalid response from server');
+      }
+      
+      // Check if files were uploaded successfully
+      if (files.length > 0 && (!result.message.files || result.message.files.length === 0)) {
+        console.warn('ChatDetail: Files were sent but not saved to server');
+        // Don't throw error, just log warning
+      }
+      
+      return result.message;
     } catch (error) {
       console.error('ChatDetail: Send message with files error:', error);
       Alert.alert('Lỗi', `Không thể gửi tin nhắn với file: ${error.message || 'Unknown error'}`);
