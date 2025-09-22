@@ -100,7 +100,7 @@ function HomeStack() {
 
 // Protected route wrapper  
 function ProtectedScreen({ children, screenName, navigation }: { children: React.ReactNode; screenName: string; navigation: any }) {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
 
   React.useEffect(() => {
@@ -127,6 +127,15 @@ function ProtectedScreen({ children, screenName, navigation }: { children: React
       });
     }
   }, [isAuthenticated, navigation]);
+
+  // While restoring auth from storage, avoid rendering login/register to prevent flicker/redirect
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+        <Text>Đang khôi phục phiên đăng nhập...</Text>
+      </View>
+    );
+  }
 
   if (!isAuthenticated) {
     if (showRegister) {

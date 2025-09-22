@@ -4,18 +4,18 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Dimensions,
-    Image,
-    Linking,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  Linking,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import API_URL from '../../config/api';
@@ -75,9 +75,10 @@ export default function ProductDetailScreen() {
       setErrorText(null);
       try {
         const res = await fetch(`${API_URL}/api/products/${productId}`);
-        if (res.status === 401) {
-          await logout();
-          (navigation as any).navigate('Tài khoản');
+        // Public endpoint: never force logout/navigate on 401/403 (Cloudflare/ngrok can misreport)
+        if (res.status === 401 || res.status === 403) {
+          try { const raw = await res.text(); console.log('Public product fetch non-OK:', res.status, raw?.slice(0,200)); } catch {}
+          if (mounted) setErrorText('Không tải được sản phẩm');
           return;
         }
         const json = await res.json();
@@ -277,9 +278,9 @@ export default function ProductDetailScreen() {
         },
         body: JSON.stringify(payload),
       });
-      if (res.status === 401) {
-        await logout();
-        (navigation as any).navigate('Tài khoản');
+      // Do not logout on 401/403 here. Cloudflare/proxy can return these. Keep session and show message.
+      if (res.status === 401 || res.status === 403) {
+        Alert.alert('Không thể tính phí', 'Máy chủ chặn yêu cầu hoặc yêu cầu xác thực lại. Vui lòng thử lại sau.');
         return;
       }
       const raw = await res.text();
@@ -411,9 +412,9 @@ export default function ProductDetailScreen() {
         },
         body: JSON.stringify(body),
       });
-      if (res.status === 401) {
-        await logout();
-        (navigation as any).navigate('Tài khoản');
+      // Do not logout on 401/403 here either
+      if (res.status === 401 || res.status === 403) {
+        Alert.alert('Không thể tạo đơn', 'Máy chủ chặn yêu cầu hoặc yêu cầu xác thực lại. Vui lòng thử lại sau.');
         return;
       }
       const raw = await res.text();
@@ -448,9 +449,8 @@ export default function ProductDetailScreen() {
           },
           body: JSON.stringify({ productId: product._id, sellerId: product.seller._id }),
         });
-      if (res.status === 401) {
-        await logout();
-        (navigation as any).navigate('Tài khoản');
+      if (res.status === 401 || res.status === 403) {
+        Alert.alert('Không thể mở chat', 'Máy chủ chặn yêu cầu hoặc yêu cầu xác thực lại. Vui lòng thử lại sau.');
         return;
       }
       const contentType = res.headers.get('content-type') || '';
