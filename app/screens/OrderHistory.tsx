@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import React from 'react';
-import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
 
@@ -35,6 +35,7 @@ export default function OrderHistory() {
   const [loading, setLoading] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
   const [details, setDetails] = React.useState<Record<string, GhnDetail>>({});
+  const [statusFilter, setStatusFilter] = React.useState<string>('all');
 
   const fetchOrders = React.useCallback(async () => {
     if (!accessToken) return;
@@ -65,7 +66,7 @@ export default function OrderHistory() {
     fetchOrders();
   }, [fetchOrders]);
 
-  // Fetch GHN details for each order using server proxy
+  // Fetch GHN status for each order using server proxy
   React.useEffect(() => {
     (async () => {
       if (!accessToken) return;
@@ -85,10 +86,6 @@ export default function OrderHistory() {
           const d = data?.data || data || {};
           next[oc] = {
             status: d?.status || d?.current_status || undefined,
-            to_name: d?.to_name, to_phone: d?.to_phone, to_address: d?.to_address,
-            from_name: d?.from_name, from_phone: d?.from_phone, from_address: d?.from_address,
-            cod_amount: d?.cod_amount,
-            leadtime: d?.leadtime,
           } as GhnDetail;
         } catch {}
       }
@@ -101,30 +98,20 @@ export default function OrderHistory() {
     try { return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val); } catch { return `${val} VNĐ`; }
   };
 
-
-  // chỉ lấy ngày/tháng/năm
-  const formatDateTime = (iso?: string) => {
-    if (!iso) return '';
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
-      return d.toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      });
-    } catch {
-      return iso;
-    }
-  };
-
   const renderItem = ({ item }: { item: OrderItem }) => {
     const title = typeof item.productId === 'object' && item.productId && 'title' in item.productId ? (item.productId as any).title : '';
     const oc = item?.shipping?.trackingNumber || item?.orderNumber;
     const d = oc ? details[oc] : undefined;
     const effectiveStatus = (d?.status || item.status || '').toString();
     return (
-      <TouchableOpacity style={styles.card} activeOpacity={0.8}>
+      <TouchableOpacity 
+        style={styles.card} 
+        activeOpacity={0.8}
+        onPress={() => (navigation as any).navigate('OrderDetail', { 
+          order: item, 
+          details: d 
+        })}
+      >
         <View style={styles.rowBetween}>
           <Text style={styles.orderNumber}>#{item.orderNumber}</Text>
           <Text style={[styles.status, statusColor(effectiveStatus)]}>{formatGhnStatus(effectiveStatus)}</Text>
@@ -138,21 +125,28 @@ export default function OrderHistory() {
           <Text style={styles.metaLabel}>Phí vận chuyển</Text>
           <Text style={styles.metaValue}>{formatCurrency(item.shippingFee ?? 0)}</Text>
         </View>
-        {d ? (
-          <View style={{ marginTop: 8 }}>
-            <Text style={styles.metaLabel}>Người gửi: {d.from_name} • {d.from_phone}</Text>
-            <Text style={[styles.metaLabel, { marginTop: 6 }]}>Người nhận: {d.to_name} • {d.to_phone}</Text>
-          </View>
-        ) : null}
-        {d?.leadtime ? (
-          <View style={{ marginTop: 8 }}>
-            <Text style={styles.metaLabel}>Ngày nhận dự kiến: {formatDateTime(d.leadtime)}</Text>
-          </View>
-        ) : null}
         <Text style={styles.createdAt}>{new Date(item.createdAt).toLocaleString('vi-VN')}</Text>
       </TouchableOpacity>
     );
   };
+
+  const filteredOrders = React.useMemo(() => {
+    const mapToEffective = (o: OrderItem) => {
+      const oc = o?.shipping?.trackingNumber || o?.orderNumber;
+      const d = oc ? details[oc] : undefined;
+      return (d?.status || o.status || '').toString().toLowerCase();
+    };
+    const isMatch = (s: string) => {
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'waiting_pick') return s === 'ready_to_pick' || s === 'picking';
+      if (statusFilter === 'delivering') return s === 'delivering';
+      if (statusFilter === 'delivered') return s === 'delivered';
+      if (statusFilter === 'return') return s === 'return' || s === 'returned';
+      if (statusFilter === 'cancel') return s.includes('cancel');
+      return true;
+    };
+    return orders.filter((o) => isMatch(mapToEffective(o)));
+  }, [orders, details, statusFilter]);
 
   return (
     <View style={styles.container}>
@@ -166,8 +160,19 @@ export default function OrderHistory() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
+      <View style={styles.filtersContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersBar}>
+          <FilterTab label="Tất cả" active={statusFilter === 'all'} onPress={() => setStatusFilter('all')} />
+          <FilterTab label="Chờ lấy" active={statusFilter === 'waiting_pick'} onPress={() => setStatusFilter('waiting_pick')} />
+          <FilterTab label="Chờ giao" active={statusFilter === 'delivering'} onPress={() => setStatusFilter('delivering')} />
+          <FilterTab label="Đã giao" active={statusFilter === 'delivered'} onPress={() => setStatusFilter('delivered')} />
+          <FilterTab label="Trả hàng" active={statusFilter === 'return'} onPress={() => setStatusFilter('return')} />
+          <FilterTab label="Đã hủy" active={statusFilter === 'cancel'} onPress={() => setStatusFilter('cancel')} />
+        </ScrollView>
+      </View>
+
       <FlatList
-        data={orders}
+        data={filteredOrders}
         keyExtractor={(it) => it._id}
         renderItem={renderItem}
         contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
@@ -222,7 +227,7 @@ function formatGhnStatus(status?: string) {
   if (s === 'return_fail') return 'Hoàn hàng thất bại';
   if (s === 'returned') return 'Đã hoàn hàng';
   if (s.includes('cancel')) return 'Đã hủy';
-  if (s === 'pending') return 'Chờ xác nhận';
+  if (s === 'pending') return '-';
   return status || '—';
 }
 
@@ -239,6 +244,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#000' },
   error: { color: '#d00', padding: 16 },
+  filtersContainer: { paddingVertical: 8 },
+  filtersBar: { paddingHorizontal: 16, flexDirection: 'row' },
   card: {
     backgroundColor: '#fafafa',
     borderRadius: 12,
@@ -255,6 +262,36 @@ const styles = StyleSheet.create({
   metaLabel: { fontSize: 12, color: '#666' },
   metaValue: { fontSize: 12, color: '#000', fontWeight: '600' },
   createdAt: { marginTop: 8, fontSize: 11, color: '#999' },
+});
+
+function FilterTab({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity onPress={onPress} style={[filterStyles.btn, active ? filterStyles.btnActive : null]} activeOpacity={0.8}>
+      <Text style={[filterStyles.text, active ? filterStyles.textActive : null]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+const filterStyles = StyleSheet.create({
+  btn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+    marginRight: 8,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  btnActive: {
+    backgroundColor: '#FFD700',
+    borderColor: '#FFD700',
+  },
+  text: { fontSize: 12, color: '#000', fontWeight: '600', textAlign: 'center' },
+  textActive: { color: '#000' },
 });
 
 

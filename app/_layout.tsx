@@ -19,6 +19,7 @@ import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import ManageListingsScreen from './screens/ManageListingsScreen';
 import NotificationScreen from './screens/NotificationScreen';
+import OrderDetailScreen from './screens/OrderDetailScreen';
 import OrderHistory from './screens/OrderHistory';
 import PostListingScreen from './screens/PostListingScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
@@ -372,6 +373,7 @@ function AppContent() {
               <Stack.Screen name="TopUp" component={TopUpScreen} />
               <Stack.Screen name="Profile" component={AddressSettingScreen} />
               <Stack.Screen name="OrderHistory" component={OrderHistory} />
+              <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
               <Stack.Screen name="TransactionHistory" component={TransactionHistory} />
             </Stack.Navigator>
           </ProtectedScreen>
