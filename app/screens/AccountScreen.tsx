@@ -58,7 +58,8 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     {
       section: 'Khác',
       items: [
-        { icon: 'time', title: 'Lịch sử giao dịch', hasArrow: true, action: 'open_orders' },
+        { icon: 'time', title: 'Lịch sử giao dịch', hasArrow: true, action: 'open_transactions' },
+        { icon: 'time', title: 'Lịch sử đơn hàng', hasArrow: true, action: 'open_orders' },
         { icon: 'settings', title: 'Cài đặt địa chỉ', hasArrow: true, action: 'open_profile' },
         { icon: 'desktop', title: 'Quản lý lịch sử đăng nhập', hasArrow: true },
         { icon: 'headset', title: 'Trợ giúp', hasArrow: true },

@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import React from 'react';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
 
@@ -170,7 +170,7 @@ export default function OrderHistory() {
         data={orders}
         keyExtractor={(it) => it._id}
         renderItem={renderItem}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchOrders} />}
         ListEmptyComponent={!loading ? (
           <View style={{ padding: 24 }}>
