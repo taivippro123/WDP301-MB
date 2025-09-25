@@ -13,18 +13,19 @@ import { Alert, AppState, DeviceEventEmitter, Text, TouchableOpacity, View } fro
 import AuthProvider, { useAuth } from './AuthContext';
 import AccountScreen from './screens/AccountScreen';
 import AddressSettingScreen from './screens/AddressSettingScreen';
-import ChatScreen from './screens/ChatScreen';
 import ChatDetailScreen from './screens/ChatDetailScreen';
+import ChatScreen from './screens/ChatScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import ManageListingsScreen from './screens/ManageListingsScreen';
 import NotificationScreen from './screens/NotificationScreen';
+import OrderHistory from './screens/OrderHistory';
 import PostListingScreen from './screens/PostListingScreen';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import TopUpScreen from './screens/TopUpScreen';
+import TransactionHistory from './screens/TransactionHistory';
 import WishlistScreen from './screens/WishlistScreen';
-import OrderHistory from './screens/OrderHistory';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -371,6 +372,7 @@ function AppContent() {
               <Stack.Screen name="TopUp" component={TopUpScreen} />
               <Stack.Screen name="Profile" component={AddressSettingScreen} />
               <Stack.Screen name="OrderHistory" component={OrderHistory} />
+              <Stack.Screen name="TransactionHistory" component={TransactionHistory} />
             </Stack.Navigator>
           </ProtectedScreen>
         )}

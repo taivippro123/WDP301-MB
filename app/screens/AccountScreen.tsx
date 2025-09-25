@@ -183,6 +183,8 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
         (navigation as any).navigate('Profile');
       } else if (item.action === 'open_orders') {
         (navigation as any).navigate('OrderHistory');
+      } else if (item.action === 'open_transactions') {
+        (navigation as any).navigate('TransactionHistory');
     } else {
       Alert.alert('Thông báo', `Tính năng "${item.title}" sẽ được phát triển trong tương lai`);
       }
