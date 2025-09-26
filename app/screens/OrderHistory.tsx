@@ -66,6 +66,26 @@ export default function OrderHistory() {
     fetchOrders();
   }, [fetchOrders]);
 
+  // Background sync returns/refunds when opening this screen
+  React.useEffect(() => {
+    (async () => {
+      if (!accessToken) return;
+      try {
+        await fetch(`${API_URL}/api/shipping/returns/sync`, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+        // Optionally refresh orders after sync
+        fetchOrders();
+      } catch {
+        // silent
+      }
+    })();
+  }, [accessToken, fetchOrders]);
+
   // Fetch GHN status for each order using server proxy
   React.useEffect(() => {
     (async () => {
@@ -139,9 +159,12 @@ export default function OrderHistory() {
     const isMatch = (s: string) => {
       if (statusFilter === 'all') return true;
       if (statusFilter === 'waiting_pick') return s === 'ready_to_pick' || s === 'picking';
-      if (statusFilter === 'delivering') return s === 'delivering';
-      if (statusFilter === 'delivered') return s === 'delivered';
-      if (statusFilter === 'return') return s === 'return' || s === 'returned';
+      // "Chờ giao": gồm picked 
+      if (statusFilter === 'delivering') return s === 'picked' ;
+      // "Đã giao": gồm delivered và delivering
+      if (statusFilter === 'delivered') return s === 'delivered' || s === 'delivering';
+      // "Trả hàng": gồm return, returning, returned
+      if (statusFilter === 'return') return s === 'return' || s === 'returning' || s === 'returned';
       if (statusFilter === 'cancel') return s.includes('cancel');
       return true;
     };

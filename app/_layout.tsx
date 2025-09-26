@@ -15,6 +15,7 @@ import AccountScreen from './screens/AccountScreen';
 import AddressSettingScreen from './screens/AddressSettingScreen';
 import ChatDetailScreen from './screens/ChatDetailScreen';
 import ChatScreen from './screens/ChatScreen';
+import ConfirmOrderScreen from './screens/ConfirmOrderScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import ManageListingsScreen from './screens/ManageListingsScreen';
@@ -82,6 +83,13 @@ function HomeStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeList" component={HomeScreen} />
       <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+      <Stack.Screen name="ConfirmOrder">
+        {({ navigation }) => (
+          <ProtectedScreen screenName="ConfirmOrder" navigation={navigation}>
+            <ConfirmOrderScreen />
+          </ProtectedScreen>
+        )}
+      </Stack.Screen>
       <Stack.Screen name="Wishlist">
         {({ navigation }) => (
           <ProtectedScreen screenName="Wishlist" navigation={navigation}>
@@ -363,7 +371,16 @@ function AppContent() {
           </ProtectedScreen>
         )}
       </Tab.Screen>
-      <Tab.Screen name="Tài khoản">
+      <Tab.Screen name="Tài khoản"
+        listeners={{
+          tabPress: (e) => {
+            try {
+              // Always ensure landing at AccountMain when tab is pressed
+              (e?.target as any)?.getParent?.()?.navigate?.('Tài khoản');
+            } catch {}
+          }
+        }}
+      >
         {({ navigation }) => (
           <ProtectedScreen screenName="Tài khoản" navigation={navigation}>
             <Stack.Navigator screenOptions={{ headerShown: false }}>

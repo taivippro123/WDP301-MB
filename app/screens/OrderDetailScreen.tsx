@@ -1,6 +1,6 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
@@ -38,6 +38,7 @@ export default function OrderDetailScreen() {
   const route = useRoute();
   const { order, details } = route.params as { order: OrderItem; details?: GhnDetail };
   const { accessToken } = useAuth();
+  const [submitting, setSubmitting] = React.useState<{ cancel: boolean; ret: boolean }>({ cancel: false, ret: false });
   const [receiverInfo, setReceiverInfo] = React.useState<{
     name: string;
     phone: string;
@@ -84,7 +85,7 @@ export default function OrderDetailScreen() {
   };
 
   const timeline = getTimelineStatus();
-  const effectiveStatus = (details?.status || order.status || '').toString().toLowerCase();
+  const effectiveStatus = (details?.status || order.status || '').toString().toLowerCase().trim();
   const productTitle = typeof order.productId === 'object' && order.productId && 'title' in order.productId 
     ? (order.productId as any).title 
     : 'Sản phẩm';
@@ -142,6 +143,56 @@ export default function OrderDetailScreen() {
       } catch {}
     })();
   }, [accessToken]);
+
+  const getOrderCode = () => (order?.shipping?.trackingNumber || order?.orderNumber || '').toString();
+
+  const handleCancel = async () => {
+    const code = getOrderCode();
+    if (!code || !accessToken || submitting.cancel) return;
+    setSubmitting((s) => ({ ...s, cancel: true }));
+    try {
+      const res = await fetch(`${API_URL}/api/shipping/order/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ order_code: code })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || data?.error || 'Hủy thất bại');
+      Alert.alert('Thành công', 'Đã gửi yêu cầu hủy đơn.');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể hủy đơn');
+    } finally {
+      setSubmitting((s) => ({ ...s, cancel: false }));
+    }
+  };
+
+  const handleReturn = async () => {
+    const code = getOrderCode();
+    if (!code || !accessToken || submitting.ret) return;
+    setSubmitting((s) => ({ ...s, ret: true }));
+    try {
+      const res = await fetch(`${API_URL}/api/shipping/order/return`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ order_code: code })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.message || data?.error || 'Trả hàng thất bại');
+      Alert.alert('Đã gửi yêu cầu', 'Yêu cầu trả hàng đã được ghi nhận.');
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể gửi yêu cầu trả hàng');
+    } finally {
+      setSubmitting((s) => ({ ...s, ret: false }));
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -254,20 +305,31 @@ export default function OrderDetailScreen() {
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          {effectiveStatus === 'ready_to_pick' || effectiveStatus === 'picking' ? (
-            <TouchableOpacity style={[styles.actionButton, styles.cancelButton]}>
-              <Text style={styles.cancelButtonText}>Hủy đặt hàng</Text>
-            </TouchableOpacity>
-          ) : effectiveStatus === 'delivered' ? (
-            <View style={styles.buttonRow}>
-              <TouchableOpacity style={[styles.actionButton, styles.returnButton]}>
-                <Text style={styles.returnButtonText}>Trả hàng</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionButton, styles.confirmButton]}>
-                <Text style={styles.confirmButtonText}>Đã nhận hàng</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
+          {(() => {
+            const s = (effectiveStatus || '').toLowerCase().trim();
+            // Hard guard: không hiển thị nút nào khi đã giao/đã hủy/đã hoàn
+            if (s === 'delivered' || s.includes('cancel') || s === 'returned') return null;
+            const canCancel = s === 'ready_to_pick' || s === 'picking';
+            const canReturn = (
+              s === 'delivery_fail'
+            );
+
+            if (!canCancel && !canReturn) return null;
+            return (
+              <View style={[styles.buttonRow, { gap: 12 }] }>
+                {canCancel && (
+                  <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} disabled={submitting.cancel} onPress={handleCancel}>
+                    <Text style={styles.cancelButtonText}>Hủy đặt hàng</Text>
+                  </TouchableOpacity>
+                )}
+                {canReturn && (
+                  <TouchableOpacity style={[styles.actionButton, styles.returnButton]} disabled={submitting.ret} onPress={handleReturn}>
+                    <Text style={styles.returnButtonText}>Trả hàng</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })()}
         </View>
 
       </ScrollView>

@@ -215,6 +215,13 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     return () => { mounted = false; };
   }, [accessToken, fetchWallet]);
 
+  // Redirect to Login if not authenticated
+  useEffect(() => {
+    if (!accessToken) {
+      (navigation as any).navigate('Login');
+    }
+  }, [accessToken, navigation]);
+
   const renderMenuItem = (item: MenuItem, index: number) => (
     <TouchableOpacity 
       key={index} 

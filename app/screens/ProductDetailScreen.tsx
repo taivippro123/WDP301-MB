@@ -4,18 +4,18 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  Image,
-  Linking,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Image,
+    Linking,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import API_URL from '../../config/api';
@@ -678,7 +678,7 @@ export default function ProductDetailScreen() {
                 <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
                 <Text style={styles.chatButtonText}>Chat</Text>
               </TouchableOpacity>
-                <TouchableOpacity style={styles.buyInlineButton} onPress={handleBuyPress}>
+              <TouchableOpacity style={styles.buyInlineButton} onPress={() => (navigation as any).navigate('ConfirmOrder', { product })}>
                   <Ionicons name="cart" size={20} color="#fff" />
                   <Text style={styles.buyInlineText}>Mua</Text>
               </TouchableOpacity>
