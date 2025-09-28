@@ -316,9 +316,6 @@ export default function PostListingScreen() {
             <SafeAreaView style={styles.container}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <TouchableOpacity>
-                        <Ionicons name="close" size={24} color="#000" />
-                    </TouchableOpacity>
                     <Text style={styles.headerTitle}>Đăng tin</Text>
                     <TouchableOpacity style={styles.saveButton}>
                         <Text style={styles.saveButtonText}>Lưu nháp</Text>
@@ -548,7 +545,7 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         color: '#000',
-        paddingLeft: 50,
+        paddingLeft: 130,
     },
     saveButton: {
         paddingHorizontal: 12,

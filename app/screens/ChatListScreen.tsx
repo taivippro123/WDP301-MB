@@ -391,6 +391,7 @@ export default function ChatListScreen() {
           renderItem={renderChatItem}
           keyExtractor={item => item.id.toString()}
           style={styles.chatList}
+          contentContainerStyle={styles.chatListContent}
           showsVerticalScrollIndicator={false}
           refreshing={refreshing}
           onRefresh={onRefresh}
@@ -419,6 +420,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+
   },
   header: {
     flexDirection: 'row',
@@ -506,6 +508,9 @@ const styles = StyleSheet.create({
   },
   chatList: {
     flex: 1,
+  },
+  chatListContent: {
+    paddingBottom: 100, // Add padding to content container for bottom navigation
   },
   chatItem: {
     flexDirection: 'row',

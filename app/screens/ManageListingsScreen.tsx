@@ -2,14 +2,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Dimensions,
+  Image,
+  Modal,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import * as ImagePicker from 'expo-image-picker';
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -29,6 +34,38 @@ export default function ManageListingsScreen() {
   const navigation = useNavigation();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    price: '',
+    description: '',
+    category: '',
+    brand: '',
+    model: '',
+    year: '',
+    condition: '',
+    length: '',
+    width: '',
+    height: '',
+    weight: '',
+    images: [] as string[],
+    specifications: {
+      batteryCapacity: '',
+      range: '',
+      chargingTime: '',
+      power: '',
+      maxSpeed: '',
+      motorType: '',
+      batteryType: '',
+      voltage: '',
+      capacity: '',
+      cycleLife: '',
+      operatingTemperature: '',
+      warranty: '',
+      compatibility: ''
+    }
+  });
 
   const [productsByStatus, setProductsByStatus] = useState<Record<string, any[]>>({
     active: [],
@@ -138,6 +175,240 @@ export default function ManageListingsScreen() {
       setErrorMsg(e?.message || 'Có lỗi xảy ra');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchProductDetails = async (productId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/products/${productId}`, {
+        headers: authHeaders(),
+      });
+      
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return null;
+      }
+      
+      if (!res.ok) {
+        throw new Error('Không thể tải chi tiết sản phẩm');
+      }
+      
+      const product = await res.json();
+      return product;
+    } catch (e: any) {
+      console.error('Error fetching product details:', e);
+      return null;
+    }
+  };
+
+  const handleEditProduct = async (product: any) => {
+    setIsLoading(true);
+    try {
+      // Fetch full product details
+      const fullProduct = await fetchProductDetails(product._id);
+      if (!fullProduct) {
+        Alert.alert('Lỗi', 'Không thể tải chi tiết sản phẩm');
+        return;
+      }
+
+      setEditingProduct(fullProduct);
+      setEditForm({
+        title: fullProduct.title || '',
+        price: fullProduct.price?.toString() || '',
+        description: fullProduct.description || '',
+        category: fullProduct.category || '',
+        brand: fullProduct.brand || '',
+        model: fullProduct.model || '',
+        year: fullProduct.year?.toString() || '',
+        condition: fullProduct.condition || '',
+        length: fullProduct.length?.toString() || '',
+        width: fullProduct.width?.toString() || '',
+        height: fullProduct.height?.toString() || '',
+        weight: fullProduct.weight?.toString() || '',
+        images: fullProduct.images || [],
+        specifications: {
+          batteryCapacity: fullProduct.specifications?.batteryCapacity || '',
+          range: fullProduct.specifications?.range || '',
+          chargingTime: fullProduct.specifications?.chargingTime || '',
+          power: fullProduct.specifications?.power || '',
+          maxSpeed: fullProduct.specifications?.maxSpeed || '',
+          motorType: fullProduct.specifications?.motorType || '',
+          batteryType: fullProduct.specifications?.batteryType || '',
+          voltage: fullProduct.specifications?.voltage || '',
+          capacity: fullProduct.specifications?.capacity || '',
+          cycleLife: fullProduct.specifications?.cycleLife || '',
+          operatingTemperature: fullProduct.specifications?.operatingTemperature || '',
+          warranty: fullProduct.specifications?.warranty || '',
+          compatibility: fullProduct.specifications?.compatibility || ''
+        }
+      });
+      setIsEditModalVisible(true);
+    } catch (e: any) {
+      Alert.alert('Lỗi', 'Không thể tải chi tiết sản phẩm');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateProduct = async () => {
+    if (!editingProduct) return;
+    
+    setIsLoading(true);
+    try {
+      const updateData = {
+        title: editForm.title,
+        price: parseFloat(editForm.price) || 0,
+        description: editForm.description,
+        category: editForm.category,
+        brand: editForm.brand,
+        model: editForm.model,
+        year: editForm.year ? parseInt(editForm.year) : undefined,
+        condition: editForm.condition,
+        length: editForm.length ? parseFloat(editForm.length) : undefined,
+        width: editForm.width ? parseFloat(editForm.width) : undefined,
+        height: editForm.height ? parseFloat(editForm.height) : undefined,
+        weight: editForm.weight ? parseFloat(editForm.weight) : undefined,
+        images: editForm.images,
+        specifications: {
+          batteryCapacity: editForm.specifications.batteryCapacity,
+          range: editForm.specifications.range,
+          chargingTime: editForm.specifications.chargingTime,
+          power: editForm.specifications.power,
+          maxSpeed: editForm.specifications.maxSpeed,
+          motorType: editForm.specifications.motorType,
+          batteryType: editForm.specifications.batteryType,
+          voltage: editForm.specifications.voltage,
+          capacity: editForm.specifications.capacity,
+          cycleLife: editForm.specifications.cycleLife,
+          operatingTemperature: editForm.specifications.operatingTemperature,
+          warranty: editForm.specifications.warranty,
+          compatibility: editForm.specifications.compatibility
+        }
+      };
+
+      const res = await fetch(`${API_URL}/api/products/${editingProduct._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders()
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
+
+      if (res.ok) {
+        Alert.alert('Thành công', 'Tin đăng đã được cập nhật');
+        setIsEditModalVisible(false);
+        setEditingProduct(null);
+        loadMyProducts(); // Reload the list
+      } else {
+        const errorData = await res.json();
+        Alert.alert('Lỗi', errorData?.message || 'Không thể cập nhật tin đăng');
+      }
+    } catch (e: any) {
+      Alert.alert('Lỗi', 'Không thể cập nhật tin đăng');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteProduct = (product: any) => {
+    Alert.alert(
+      'Xóa tin đăng',
+      'Bạn có chắc chắn muốn xóa tin đăng này?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa',
+          style: 'destructive',
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              const res = await fetch(`${API_URL}/api/products/${product._id}`, {
+                method: 'DELETE',
+                headers: authHeaders()
+              });
+
+              if (res.status === 401) {
+                await logout();
+                (navigation as any).navigate('Tài khoản');
+                return;
+              }
+
+              if (res.ok) {
+                Alert.alert('Thành công', 'Tin đăng đã được xóa');
+                loadMyProducts(); // Reload the list
+              } else {
+                const errorData = await res.json();
+                Alert.alert('Lỗi', errorData?.message || 'Không thể xóa tin đăng');
+              }
+            } catch (e: any) {
+              Alert.alert('Lỗi', 'Không thể xóa tin đăng');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        base64: false,
+      });
+
+      if (!result.canceled && result.assets) {
+        const newImages = result.assets.map(asset => asset.uri);
+        setEditForm(prev => ({
+          ...prev,
+          images: [...prev.images, ...newImages]
+        }));
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể chọn ảnh');
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setEditForm(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Video handling functions (from HomeScreen)
+  const getFirstMediaUrl = (p: any): string | null => {
+    const imgs: any[] = Array.isArray(p?.images) ? p.images : [];
+    const vids: any[] = Array.isArray((p as any)?.videos) ? (p as any).videos : [];
+    const first = (imgs[0] || vids[0]) || null;
+    if (!first) return null;
+    return typeof first === 'string' ? first : (first.url || first.secure_url || null);
+  };
+
+  const isVideoUrl = (url?: string | null): boolean => {
+    if (!url) return false;
+    const u = url.toLowerCase();
+    return /(\.mp4|\.mov|\.m4v|\.webm|\.ogg)(\?|$)/.test(u) || u.includes('/video/upload');
+  };
+
+  const getVideoPoster = (url?: string | null): string | undefined => {
+    if (!url) return undefined;
+    try {
+      const withSo = url.replace('/video/upload/', '/video/upload/so_0/');
+      return withSo.replace(/\.(mp4|mov|m4v|webm|ogg)(\?.*)?$/i, '.jpg$2');
+    } catch {
+      return undefined;
     }
   };
 
@@ -309,55 +580,6 @@ export default function ManageListingsScreen() {
     };
   }, [activeTab]);
 
-  const listings = [
-    {
-      id: 1,
-      title: "Xe máy điện VinFast Klara A2",
-      price: "35,000,000 VNĐ",
-      location: "Hà Nội",
-      status: "active",
-      views: 156,
-      favorites: 12,
-      postedDate: "3 ngày trước",
-      expiryDate: "27 ngày còn lại",
-    },
-    {
-      id: 2,
-      title: "Pin xe máy điện Lithium 60V 32Ah",
-      price: "8,500,000 VNĐ",
-      location: "Đà Nẵng",
-      status: "active",
-      views: 89,
-      favorites: 5,
-      postedDate: "1 tuần trước",
-      expiryDate: "23 ngày còn lại",
-    },
-    {
-      id: 3,
-      title: "Xe đạp điện Yamaha PAS",
-      price: "18,000,000 VNĐ",
-      location: "Hà Nội",
-      status: "active",
-      views: 234,
-      favorites: 18,
-      postedDate: "2 tuần trước",
-      expiryDate: "16 ngày còn lại",
-    },
-  ];
-
-  const expiredListings = [
-    {
-      id: 4,
-      title: "Ô tô điện VinFast VF8",
-      price: "1,200,000,000 VNĐ",
-      location: "TP.HCM",
-      status: "expired",
-      views: 445,
-      favorites: 28,
-      postedDate: "2 tháng trước",
-      expiryDate: "Đã hết hạn",
-    },
-  ];
 
   const getCountForTab = (index: number) => {
     const key = tabs[index]?.key as keyof typeof productsByStatus;
@@ -402,52 +624,84 @@ export default function ManageListingsScreen() {
   });
 
   const renderListingItem = (item: any) => (
-    <TouchableOpacity key={item._id || item.id} style={styles.listingCard} onPress={() => {
-      const pid = item._id || item.id;
-      (navigation as any).navigate('Trang chủ' as never, { screen: 'ProductDetail', params: { productId: pid } } as never);
-    }}>
-      <View style={styles.listingImage}>
-        {item?.images && item.images.length > 0 ? (
-          <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden' }}>
-            {/* @ts-ignore */}
-            <Animated.Image source={{ uri: item.images[0] }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          </View>
-        ) : (
-          <Ionicons name="image-outline" size={40} color="#ccc" />
-        )}
-      </View>
-
-      <View style={styles.listingInfo}>
-        <Text style={styles.listingTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.listingPrice}>{typeof item.price === 'number' ? `${item.price.toLocaleString('vi-VN')} VNĐ` : item.price}</Text>
-        {!!item.location && <Text style={styles.listingLocation}>{item.location}</Text>}
-
-        <View style={styles.listingStats}>
-          <View style={styles.statItem}>
-            <Ionicons name="eye-outline" size={16} color="#666" />
-            <Text style={styles.statText}>{item.views || 0}</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Ionicons name="heart-outline" size={16} color="#666" />
-            <Text style={styles.statText}>{item.favorites || item.likes || 0}</Text>
-          </View>
+    <View key={item._id || item.id} style={styles.listingCard}>
+      <TouchableOpacity 
+        style={styles.listingContent}
+        onPress={() => {
+          const pid = item._id || item.id;
+          (navigation as any).navigate('Trang chủ' as never, { screen: 'ProductDetail', params: { productId: pid } } as never);
+        }}
+      >
+        <View style={styles.listingImage}>
+          {(() => {
+            const url = getFirstMediaUrl(item);
+            if (!url) return <Ionicons name="image-outline" size={40} color="#ccc" />;
+            if (isVideoUrl(url)) {
+              const poster = getVideoPoster(url);
+              return (
+                <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden', backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+                  {poster ? (
+                    <Image source={{ uri: poster }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  ) : (
+                    <Ionicons name="videocam" size={32} color="#999" />
+                  )}
+                  <View style={{ position: 'absolute', width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="play" size={20} color="#fff" />
+                  </View>
+                </View>
+              );
+            }
+            return <Image source={{ uri: url }} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="cover" />;
+          })()}
         </View>
 
-        <View style={styles.listingDates}>
-          <Text style={styles.dateText}>{item.postedDate || new Date(item.createdAt).toLocaleDateString('vi-VN')}</Text>
-          <Text
-            style={[
-              styles.expiryText,
-              item.status === "expired" && styles.expiredText,
-            ]}
-          >
-            {item.expiryDate || (item.status === 'expired' ? 'Đã hết hạn' : 'Đang hiển thị')}
+        <View style={styles.listingInfo}>
+          <Text style={styles.listingTitle} numberOfLines={2}>
+            {item.title}
           </Text>
+          <Text style={styles.listingPrice}>{typeof item.price === 'number' ? `${item.price.toLocaleString('vi-VN')} VNĐ` : item.price}</Text>
+          {!!item.location && <Text style={styles.listingLocation}>{item.location}</Text>}
+
+          <View style={styles.listingStats}>
+            <View style={styles.statItem}>
+              <Ionicons name="eye-outline" size={16} color="#666" />
+              <Text style={styles.statText}>{item.views || 0}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Ionicons name="heart-outline" size={16} color="#666" />
+              <Text style={styles.statText}>{item.favorites || item.likes || 0}</Text>
+            </View>
+          </View>
+
+          <View style={styles.listingDates}>
+            <Text style={styles.dateText}>{item.postedDate || new Date(item.createdAt).toLocaleDateString('vi-VN')}</Text>
+            <Text
+              style={[
+                styles.expiryText,
+                item.status === "expired" && styles.expiredText,
+              ]}
+            >
+              {item.expiryDate || (item.status === 'expired' ? 'Đã hết hạn' : 'Đang hiển thị')}
+            </Text>
+          </View>
         </View>
+      </TouchableOpacity>
+
+      <View style={styles.listingActions}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => handleEditProduct(item)}
+        >
+          <Ionicons name="create-outline" size={20} color="#4CAF50" />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => handleDeleteProduct(item)}
+        >
+          <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 
   return (
@@ -538,6 +792,390 @@ export default function ManageListingsScreen() {
           </ScrollView>
         </Animated.View>
       </PanGestureHandler>
+
+      {/* Edit Modal */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
+              <Text style={styles.modalCancelText}>Hủy</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Sửa tin đăng</Text>
+            <TouchableOpacity onPress={handleUpdateProduct} disabled={isLoading}>
+              <Text style={[styles.modalSaveText, isLoading && styles.disabledText]}>
+                {isLoading ? 'Đang lưu...' : 'Lưu'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {/* Basic Information */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Thông tin cơ bản</Text>
+            </View>
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Tiêu đề *</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editForm.title}
+                onChangeText={(text) => setEditForm(prev => ({ ...prev, title: text }))}
+                placeholder="Nhập tiêu đề tin đăng"
+                multiline
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Mô tả</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea]}
+                value={editForm.description}
+                onChangeText={(text) => setEditForm(prev => ({ ...prev, description: text }))}
+                placeholder="Mô tả chi tiết sản phẩm"
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Giá (VNĐ) *</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editForm.price}
+                onChangeText={(text) => setEditForm(prev => ({ ...prev, price: text }))}
+                placeholder="Nhập giá sản phẩm"
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Danh mục</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.category}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, category: text }))}
+                  placeholder="VD: vehicle, battery"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.inputLabel}>Tình trạng</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.condition}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, condition: text }))}
+                  placeholder="VD: new, used"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Thương hiệu</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.brand}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, brand: text }))}
+                  placeholder="VD: VinFast"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.inputLabel}>Model</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.model}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, model: text }))}
+                  placeholder="VD: VF8"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Năm sản xuất</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editForm.year}
+                onChangeText={(text) => setEditForm(prev => ({ ...prev, year: text }))}
+                placeholder="VD: 2023"
+                keyboardType="numeric"
+              />
+            </View>
+
+            {/* Images Section */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Hình ảnh sản phẩm</Text>
+            </View>
+
+            <View style={styles.imagesContainer}>
+              {editForm.images.map((image, index) => (
+                <View key={index} style={styles.imageItem}>
+                  {(() => {
+                    if (isVideoUrl(image)) {
+                      const poster = getVideoPoster(image);
+                      return (
+                        <View style={styles.imagePreview}>
+                          {poster ? (
+                            <Image source={{ uri: poster }} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="cover" />
+                          ) : (
+                            <Ionicons name="videocam" size={24} color="#999" />
+                          )}
+                          <View style={{ position: 'absolute', width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }}>
+                            <Ionicons name="play" size={12} color="#fff" />
+                          </View>
+                        </View>
+                      );
+                    }
+                    return <Image source={{ uri: image }} style={styles.imagePreview} />;
+                  })()}
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => removeImage(index)}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#FF6B6B" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              
+              <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
+                <Ionicons name="camera" size={24} color="#666" />
+                <Text style={styles.addImageText}>Thêm ảnh</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Physical Dimensions */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Kích thước & Trọng lượng</Text>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 4 }]}>
+                <Text style={styles.inputLabel}>Chiều dài (cm)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.length}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, length: text }))}
+                  placeholder="150"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginHorizontal: 4 }]}>
+                <Text style={styles.inputLabel}>Chiều rộng (cm)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.width}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, width: text }))}
+                  placeholder="60"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 4 }]}>
+                <Text style={styles.inputLabel}>Chiều cao (cm)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.height}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, height: text }))}
+                  placeholder="90"
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Trọng lượng (kg)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editForm.weight}
+                onChangeText={(text) => setEditForm(prev => ({ ...prev, weight: text }))}
+                placeholder="50"
+                keyboardType="numeric"
+              />
+            </View>
+
+            {/* Specifications */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Thông số kỹ thuật</Text>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Dung lượng pin</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.batteryCapacity}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, batteryCapacity: text }
+                  }))}
+                  placeholder="VD: 3.5 kWh"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.inputLabel}>Tầm hoạt động</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.range}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, range: text }
+                  }))}
+                  placeholder="VD: 203 km"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Thời gian sạc</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.chargingTime}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, chargingTime: text }
+                  }))}
+                  placeholder="VD: 6-7 giờ"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.inputLabel}>Công suất</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.power}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, power: text }
+                  }))}
+                  placeholder="VD: 2,500 W"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Tốc độ tối đa</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.maxSpeed}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, maxSpeed: text }
+                  }))}
+                  placeholder="VD: 120 km/h"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.inputLabel}>Loại động cơ</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.motorType}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, motorType: text }
+                  }))}
+                  placeholder="VD: Permanent Magnet"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Loại pin</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.batteryType}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, batteryType: text }
+                  }))}
+                  placeholder="VD: LFP"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.inputLabel}>Điện áp</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.voltage}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, voltage: text }
+                  }))}
+                  placeholder="VD: 48V"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.inputLabel}>Dung lượng</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.capacity}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, capacity: text }
+                  }))}
+                  placeholder="VD: 34.6 Ah"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                <Text style={styles.inputLabel}>Chu kỳ sạc</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.specifications.cycleLife}
+                  onChangeText={(text) => setEditForm(prev => ({ 
+                    ...prev, 
+                    specifications: { ...prev.specifications, cycleLife: text }
+                  }))}
+                  placeholder="VD: 2000 chu kỳ"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Nhiệt độ hoạt động</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editForm.specifications.operatingTemperature}
+                onChangeText={(text) => setEditForm(prev => ({ 
+                  ...prev, 
+                  specifications: { ...prev.specifications, operatingTemperature: text }
+                }))}
+                placeholder="VD: -10°C đến 45°C"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Bảo hành</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editForm.specifications.warranty}
+                onChangeText={(text) => setEditForm(prev => ({ 
+                  ...prev, 
+                  specifications: { ...prev.specifications, warranty: text }
+                }))}
+                placeholder="VD: 3 năm hoặc 30,000 km"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Tương thích</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editForm.specifications.compatibility}
+                onChangeText={(text) => setEditForm(prev => ({ 
+                  ...prev, 
+                  specifications: { ...prev.specifications, compatibility: text }
+                }))}
+                placeholder="VD: Tương thích trạm sạc VinFast"
+              />
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -694,6 +1332,10 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 3,
   },
+  listingContent: {
+    flex: 1,
+    flexDirection: "row",
+  },
   listingImage: {
     width: 80,
     height: 80,
@@ -761,5 +1403,123 @@ const styles = StyleSheet.create({
   actionButton: {
     padding: 8,
     marginVertical: 2,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#000",
+  },
+  modalCancelText: {
+    fontSize: 16,
+    color: "#666",
+  },
+  modalSaveText: {
+    fontSize: 16,
+    color: "#4CAF50",
+    fontWeight: "600",
+  },
+  disabledText: {
+    color: "#ccc",
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputRow: {
+    flexDirection: "row",
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: "#fff",
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: "top",
+  },
+  specsContainer: {
+    // Container for specifications inputs
+  },
+  sectionHeader: {
+    marginTop: 20,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  // Image styles
+  imagesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 16,
+  },
+  imageItem: {
+    position: 'relative',
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  imagePreview: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+  },
+  addImageButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  addImageText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center',
   },
 });

@@ -392,6 +392,13 @@ function AppContent() {
               <Stack.Screen name="OrderHistory" component={OrderHistory} />
               <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
               <Stack.Screen name="TransactionHistory" component={TransactionHistory} />
+              <Stack.Screen name="Wishlist">
+                {({ navigation }) => (
+                  <ProtectedScreen screenName="Wishlist" navigation={navigation}>
+                    <WishlistScreen />
+                  </ProtectedScreen>
+                )}
+              </Stack.Screen>
             </Stack.Navigator>
           </ProtectedScreen>
         )}

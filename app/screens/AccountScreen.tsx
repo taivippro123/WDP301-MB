@@ -45,7 +45,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     {
       section: 'Tiện ích',
       items: [
-        { icon: 'heart', title: 'Tin đăng đã lưu', hasArrow: true },
+        { icon: 'heart', title: 'Tin đăng đã thích', hasArrow: true, action: 'open_favorites' },
         { icon: 'star', title: 'Đánh giá từ tôi', hasArrow: true }
       ]
     },
@@ -181,6 +181,8 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     } else {
       if (item.action === 'open_profile') {
         (navigation as any).navigate('Profile');
+      } else if (item.action === 'open_favorites') {
+        (navigation as any).navigate('Wishlist');
       } else if (item.action === 'open_orders') {
         (navigation as any).navigate('OrderHistory');
       } else if (item.action === 'open_transactions') {

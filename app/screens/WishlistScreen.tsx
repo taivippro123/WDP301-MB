@@ -318,6 +318,31 @@ export default function WishlistScreen() {
     }
   };
 
+  // Video handling functions (from HomeScreen)
+  const getFirstMediaUrl = (p: any): string | null => {
+    const imgs: any[] = Array.isArray(p?.images) ? p.images : [];
+    const vids: any[] = Array.isArray((p as any)?.videos) ? (p as any).videos : [];
+    const first = (imgs[0] || vids[0]) || null;
+    if (!first) return null;
+    return typeof first === 'string' ? first : (first.url || first.secure_url || null);
+  };
+
+  const isVideoUrl = (url?: string | null): boolean => {
+    if (!url) return false;
+    const u = url.toLowerCase();
+    return /(\.mp4|\.mov|\.m4v|\.webm|\.ogg)(\?|$)/.test(u) || u.includes('/video/upload');
+  };
+
+  const getVideoPoster = (url?: string | null): string | undefined => {
+    if (!url) return undefined;
+    try {
+      const withSo = url.replace('/video/upload/', '/video/upload/so_0/');
+      return withSo.replace(/\.(mp4|mov|m4v|webm|ogg)(\?.*)?$/i, '.jpg$2');
+    } catch {
+      return undefined;
+    }
+  };
+
   const renderProductItem = ({ item }: { item: WishlistProduct }) => (
     <TouchableOpacity
       style={[
@@ -350,15 +375,26 @@ export default function WishlistScreen() {
       )}
 
       <View style={styles.productImage}>
-        {item.product?.images && item.product.images.length > 0 ? (
-          <Image 
-            source={{ uri: item.product.images[0] }} 
-            style={{ width: '100%', height: '100%', borderRadius: 8 }} 
-            resizeMode="cover"
-          />
-        ) : (
-          <Ionicons name="image-outline" size={40} color="#ccc" />
-        )}
+        {(() => {
+          const url = getFirstMediaUrl(item.product);
+          if (!url) return <Ionicons name="image-outline" size={40} color="#ccc" />;
+          if (isVideoUrl(url)) {
+            const poster = getVideoPoster(url);
+            return (
+              <View style={{ width: '100%', height: '100%', borderRadius: 8, overflow: 'hidden', backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+                {poster ? (
+                  <Image source={{ uri: poster }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                ) : (
+                  <Ionicons name="videocam" size={32} color="#999" />
+                )}
+                <View style={{ position: 'absolute', width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="play" size={16} color="#fff" />
+                </View>
+              </View>
+            );
+          }
+          return <Image source={{ uri: url }} style={{ width: '100%', height: '100%', borderRadius: 8 }} resizeMode="cover" />;
+        })()}
         {item.product?.isAvailable === false && (
           <View style={styles.unavailableOverlay}>
             <Text style={styles.unavailableText}>Không còn bán</Text>
@@ -762,7 +798,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContainer: {
-    paddingBottom: 120,
+    paddingBottom: 100, // Add padding to account for bottom navigation
   },
   productItem: {
     flexDirection: "row",
