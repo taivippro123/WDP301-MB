@@ -1,6 +1,6 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
@@ -45,6 +45,8 @@ export default function OrderDetailScreen() {
     address: string;
   }>({ name: '', phone: '', address: '' });
   const [profileAddress, setProfileAddress] = React.useState<string>('');
+  const [showCancelModal, setShowCancelModal] = React.useState(false);
+  const [showReturnModal, setShowReturnModal] = React.useState(false);
 
   const formatCurrency = (val?: number) => {
     if (typeof val !== 'number') return '';
@@ -163,6 +165,7 @@ export default function OrderDetailScreen() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || data?.error || 'Hủy thất bại');
       Alert.alert('Thành công', 'Đã gửi yêu cầu hủy đơn.');
+      setShowCancelModal(false);
     } catch (e: any) {
       Alert.alert('Lỗi', e?.message || 'Không thể hủy đơn');
     } finally {
@@ -187,6 +190,7 @@ export default function OrderDetailScreen() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || data?.error || 'Trả hàng thất bại');
       Alert.alert('Đã gửi yêu cầu', 'Yêu cầu trả hàng đã được ghi nhận.');
+      setShowReturnModal(false);
     } catch (e: any) {
       Alert.alert('Lỗi', e?.message || 'Không thể gửi yêu cầu trả hàng');
     } finally {
@@ -318,12 +322,12 @@ export default function OrderDetailScreen() {
             return (
               <View style={[styles.buttonRow, { gap: 12 }] }>
                 {canCancel && (
-                  <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} disabled={submitting.cancel} onPress={handleCancel}>
+                  <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} disabled={submitting.cancel} onPress={() => setShowCancelModal(true)}>
                     <Text style={styles.cancelButtonText}>Hủy đặt hàng</Text>
                   </TouchableOpacity>
                 )}
                 {canReturn && (
-                  <TouchableOpacity style={[styles.actionButton, styles.returnButton]} disabled={submitting.ret} onPress={handleReturn}>
+                  <TouchableOpacity style={[styles.actionButton, styles.returnButton]} disabled={submitting.ret} onPress={() => setShowReturnModal(true)}>
                     <Text style={styles.returnButtonText}>Trả hàng</Text>
                   </TouchableOpacity>
                 )}
@@ -333,6 +337,78 @@ export default function OrderDetailScreen() {
         </View>
 
       </ScrollView>
+
+      {/* Cancel Confirmation Modal */}
+      <Modal visible={showCancelModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Xác nhận hủy đơn hàng</Text>
+            </View>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalMessage}>
+                Bạn có chắc chắn muốn hủy đơn hàng #{order.orderNumber}?
+              </Text>
+              <Text style={styles.modalSubMessage}>
+                Hành động này không thể hoàn tác.
+              </Text>
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelModalButton]} 
+                onPress={() => setShowCancelModal(false)}
+              >
+                <Text style={styles.cancelModalButtonText}>Không</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.confirmModalButton]} 
+                onPress={handleCancel}
+                disabled={submitting.cancel}
+              >
+                <Text style={styles.confirmModalButtonText}>
+                  {submitting.cancel ? 'Đang xử lý...' : 'Có, hủy đơn'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Return Confirmation Modal */}
+      <Modal visible={showReturnModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Xác nhận trả hàng</Text>
+            </View>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalMessage}>
+                Bạn có chắc chắn muốn trả hàng cho đơn hàng #{order.orderNumber}?
+              </Text>
+              <Text style={styles.modalSubMessage}>
+                Yêu cầu trả hàng sẽ được gửi đến đơn vị vận chuyển.
+              </Text>
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelModalButton]} 
+                onPress={() => setShowReturnModal(false)}
+              >
+                <Text style={styles.cancelModalButtonText}>Không</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.confirmModalButton]} 
+                onPress={handleReturn}
+                disabled={submitting.ret}
+              >
+                <Text style={styles.confirmModalButtonText}>
+                  {submitting.ret ? 'Đang xử lý...' : 'Có, trả hàng'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -521,5 +597,88 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 14,
     fontWeight: '500',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'center',
+  },
+  modalContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 22,
+  },
+  modalSubMessage: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelModalButton: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  cancelModalButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmModalButton: {
+    backgroundColor: '#e74c3c',
+  },
+  confirmModalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
