@@ -144,7 +144,7 @@ export default function TransactionHistory() {
           data={transactions}
           keyExtractor={(it) => it._id}
           renderItem={renderItem}
-          contentContainerStyle={transactions.length === 0 ? { flex: 1, justifyContent: 'center', alignItems: 'center' } : {}}
+          contentContainerStyle={transactions.length === 0 ? { flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: 100 } : { paddingBottom: 100 }}
           ListEmptyComponent={() => (
             <View style={{ alignItems: 'center' }}>
               <Ionicons name="time" size={28} color="#bbb" />
