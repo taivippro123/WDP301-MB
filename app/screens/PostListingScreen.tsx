@@ -32,7 +32,7 @@ export default function PostListingScreen() {
         brand: '',
         model: '',
         year: '',
-        condition: 'new',
+        condition: 'used',
         length: '',
         width: '',
         height: '',
@@ -450,16 +450,16 @@ export default function PostListingScreen() {
                             <Text style={styles.label}>Tình trạng <Text style={styles.required}>*</Text></Text> 
                             <View style={styles.conditionButtons}>
                                 <TouchableOpacity
-                                    style={[styles.conditionButton, formData.condition === 'new' && styles.activeCondition]}
-                                    onPress={() => updateFormData('condition', 'new')}
-                                >
-                                    <Text style={[styles.conditionText, formData.condition === 'new' && styles.activeConditionText]}>Mới</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
                                     style={[styles.conditionButton, formData.condition === 'used' && styles.activeCondition]}
                                     onPress={() => updateFormData('condition', 'used')}
                                 >
                                     <Text style={[styles.conditionText, formData.condition === 'used' && styles.activeConditionText]}>Đã qua sử dụng</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.conditionButton, formData.condition === 'refurbished' && styles.activeCondition]}
+                                    onPress={() => updateFormData('condition', 'refurbished')}
+                                >
+                                    <Text style={[styles.conditionText, formData.condition === 'refurbished' && styles.activeConditionText]}>Tân trang</Text>
                                 </TouchableOpacity>
                             </View>
                             {!!errors.condition && <Text style={styles.errorText}>{errors.condition}</Text>}

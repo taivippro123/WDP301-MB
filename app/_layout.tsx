@@ -16,6 +16,7 @@ import AddressSettingScreen from './screens/AddressSettingScreen';
 import ChatDetailScreen from './screens/ChatDetailScreen';
 import ChatScreen from './screens/ChatScreen';
 import ConfirmOrderScreen from './screens/ConfirmOrderScreen';
+import ContractScreen from './screens/ContractScreen';
 import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import ManageListingsScreen from './screens/ManageListingsScreen';
@@ -78,7 +79,7 @@ function ChatStack({ navigation: parentNavigation }: { navigation: any }) {
 }
 
 // Create a stack navigator for Home that includes ProductDetail, Wishlist, and Notification
-function HomeStack() {
+function HomeStack({ navigation: parentNavigation }: { navigation: any }) {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeList" component={HomeScreen} />
@@ -90,6 +91,33 @@ function HomeStack() {
           </ProtectedScreen>
         )}
       </Stack.Screen>
+      <Stack.Screen 
+        name="Contract" 
+        component={ContractScreen}
+        listeners={{
+          focus: () => {
+            // Hide bottom navigation when Contract is focused
+            parentNavigation?.setOptions({ tabBarStyle: { display: 'none' } });
+          },
+          blur: () => {
+            // Restore bottom navigation when leaving
+            parentNavigation?.setOptions({
+              tabBarStyle: {
+                backgroundColor: 'white',
+                height: 90,
+                paddingBottom: 2,
+                paddingTop: 10,
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                borderTopWidth: 1,
+                borderTopColor: '#E5E5E7',
+              }
+            });
+          }
+        }}
+      />
       <Stack.Screen name="Wishlist">
         {({ navigation }) => (
           <ProtectedScreen screenName="Wishlist" navigation={navigation}>
@@ -339,7 +367,20 @@ function AppContent() {
         ),
       })}
     >
-      <Tab.Screen name="Trang chủ" component={HomeStack} />
+      <Tab.Screen name="Trang chủ"
+        listeners={{
+          tabPress: (e) => {
+            try {
+              // Always return to HomeList when pressing the Home tab
+              (e?.target as any)?.getParent?.()?.navigate?.('Trang chủ', { screen: 'HomeList' });
+            } catch {}
+          }
+        }}
+      >
+        {({ navigation }) => (
+          <HomeStack navigation={navigation} />
+        )}
+      </Tab.Screen>
       <Tab.Screen name="Quản lí tin">
         {({ navigation }) => (
           <ProtectedScreen screenName="Quản lí tin" navigation={navigation}>

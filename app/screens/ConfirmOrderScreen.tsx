@@ -275,6 +275,25 @@ export default function ConfirmOrderScreen() {
 
   const total = Number(product?.price || 0) + Number(shippingFee || 0);
 
+  const goToContract = async () => {
+    try {
+      if (!product?._id) {
+        Alert.alert('Lỗi', 'Thiếu thông tin sản phẩm');
+        return;
+      }
+      (navigation as any).navigate('Contract', {
+        productId: (product as any)?._id,
+        sellerId: (product as any)?.seller?._id,
+        product,
+        receiver,
+        unitPrice: Number((product as any)?.price) || 0,
+        shippingFee: Number(shippingFee) || 0,
+      });
+    } catch (e: any) {
+      Alert.alert('Lỗi', e?.message || 'Không thể mở hợp đồng');
+    }
+  };
+
   const placeOrder = async () => {
     try {
       if (!product?._id) {
@@ -485,8 +504,8 @@ export default function ConfirmOrderScreen() {
           <Text style={{ fontSize: 12, color: '#666' }}>Tổng cộng</Text>
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#000' }}>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}</Text>
         </View>
-        <TouchableOpacity style={[styles.placeOrderButton, isPlacingOrder && { opacity: 0.7 }]} onPress={placeOrder} disabled={isPlacingOrder || isCalculating}>
-          {isPlacingOrder ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.placeOrderText}>Đặt hàng</Text>}
+        <TouchableOpacity style={[styles.placeOrderButton, isPlacingOrder && { opacity: 0.7 }]} onPress={goToContract} disabled={isPlacingOrder || isCalculating}>
+          {isPlacingOrder ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.placeOrderText}>Ký hợp đồng</Text>}
         </TouchableOpacity>
       </View>
 
