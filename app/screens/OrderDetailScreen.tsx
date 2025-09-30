@@ -1,7 +1,7 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, ActivityIndicator } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
 
@@ -19,6 +19,7 @@ type OrderItem = {
     carrier?: string;
   };
   productId?: { _id: string; title?: string; images?: string[] } | string;
+  contract?: { pdfUrl?: string; signedAt?: string; contractNumber?: string | null } | null;
 };
 
 type GhnDetail = {
@@ -38,6 +39,7 @@ export default function OrderDetailScreen() {
   const route = useRoute();
   const { order, details } = route.params as { order: OrderItem; details?: GhnDetail };
   const { accessToken } = useAuth();
+  const insets = useSafeAreaInsets();
   const [submitting, setSubmitting] = React.useState<{ cancel: boolean; ret: boolean }>({ cancel: false, ret: false });
   const [receiverInfo, setReceiverInfo] = React.useState<{
     name: string;
@@ -47,6 +49,19 @@ export default function OrderDetailScreen() {
   const [profileAddress, setProfileAddress] = React.useState<string>('');
   const [showCancelModal, setShowCancelModal] = React.useState(false);
   const [showReturnModal, setShowReturnModal] = React.useState(false);
+  const [showContractModal, setShowContractModal] = React.useState(false);
+  const [webviewLoading, setWebviewLoading] = React.useState(true);
+
+  const WebViewComponent = React.useMemo(() => {
+    try {
+      // Lazy require to avoid crash if dependency not installed
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { WebView } = require('react-native-webview');
+      return WebView as React.ComponentType<any>;
+    } catch {
+      return null as any;
+    }
+  }, []);
 
   const formatCurrency = (val?: number) => {
     if (typeof val !== 'number') return '';
@@ -147,6 +162,20 @@ export default function OrderDetailScreen() {
   }, [accessToken]);
 
   const getOrderCode = () => (order?.shipping?.trackingNumber || order?.orderNumber || '').toString();
+
+  const handleOpenContract = async () => {
+    const url = (order as any)?.contract?.pdfUrl as string | undefined;
+    if (!url) {
+      Alert.alert('Không có hợp đồng', 'Chưa có đường dẫn hợp đồng để xem.');
+      return;
+    }
+    if (WebViewComponent) {
+      setWebviewLoading(true);
+      setShowContractModal(true);
+    } else {
+      try { await Linking.openURL(url); } catch {}
+    }
+  };
 
   const handleCancel = async () => {
     const code = getOrderCode();
@@ -307,6 +336,24 @@ export default function OrderDetailScreen() {
           </View>
         )}
 
+        {/* Contract */}
+        {!!(order as any)?.contract?.pdfUrl && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Hợp đồng</Text>
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Tình trạng</Text>
+                <Text style={styles.infoValue}>{(order as any)?.contract?.signedAt ? 'Đã ký' : 'Chưa ký'}</Text>
+              </View>
+              <View style={[styles.buttonRow, { marginTop: 8 }] }>
+                <TouchableOpacity style={[styles.actionButton, styles.confirmButton]} onPress={handleOpenContract}>
+                  <Text style={styles.confirmButtonText}>Xem hợp đồng</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           {(() => {
@@ -408,6 +455,48 @@ export default function OrderDetailScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Contract Viewer Modal */}
+      <Modal visible={showContractModal} animationType="slide" onRequestClose={() => setShowContractModal(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+            <TouchableOpacity onPress={() => setShowContractModal(false)} style={{ padding: 8 }}>
+              <Text style={{ fontSize: 16 }}>Đóng</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#000' }}>Hợp đồng</Text>
+            <View style={{ width: 48 }} />
+          </View>
+          {WebViewComponent ? (
+            <View style={{ flex: 1 }}>
+              {webviewLoading && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                  <ActivityIndicator size="large" color="#000" />
+                </View>
+              )}
+              <WebViewComponent 
+                source={{ uri: (order as any)?.contract?.pdfUrl as string }}
+                onLoadEnd={() => setWebviewLoading(false)}
+                startInLoadingState
+                style={{ flex: 1 }}
+                originWhitelist={["*"]}
+                allowsBackForwardNavigationGestures
+              />
+            </View>
+          ) : (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              <Text style={{ textAlign: 'center', color: '#000' }}>
+                Không thể mở trong ứng dụng. Nhấn vào nút bên dưới để mở trong trình duyệt.
+              </Text>
+              <TouchableOpacity style={[styles.actionButton, styles.confirmButton, { marginTop: 16 }]} onPress={async () => {
+                const url = (order as any)?.contract?.pdfUrl as string | undefined;
+                if (url) { try { await Linking.openURL(url); } catch {} }
+              }}>
+                <Text style={styles.confirmModalButtonText}>Mở trong trình duyệt</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );

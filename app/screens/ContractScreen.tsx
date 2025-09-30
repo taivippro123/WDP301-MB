@@ -27,6 +27,8 @@ export default function ContractScreen() {
   const [html, setHtml] = React.useState('');
   const [contractId, setContractId] = React.useState<string | null>(null);
   const [isUploading, setIsUploading] = React.useState(false);
+  const [showPdfModal, setShowPdfModal] = React.useState(false);
+  const [pdfLoading, setPdfLoading] = React.useState<boolean>(false);
   const placeholdersRef = React.useRef<{ sellerName?: string; buyerName?: string; productTitle?: string; unitPrice?: number } | null>(null);
   const [signatureDataUrl, setSignatureDataUrl] = React.useState<string | null>(null);
   const [isSigning, setIsSigning] = React.useState<boolean>(false);
@@ -257,7 +259,24 @@ export default function ContractScreen() {
         return;
       }
       setIsUploading(true);
-      const { uri } = await Print.printToFileAsync({ html });
+      // If user has drawn a signature, let server render final PDF with signature
+      if (signatureDataUrl) {
+        const form = new FormData();
+        form.append('contractId', contractId);
+        form.append('signature', signatureDataUrl);
+        const res = await fetch(`${API_URL}/api/contracts/sign`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: form as any,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Upload thất bại');
+        return true;
+      }
+
+      // Fallback: no signature captured => generate client PDF from current HTML
+      const htmlToPrint = buildPrettyHtml();
+      const { uri } = await Print.printToFileAsync({ html: htmlToPrint });
       const form = new FormData();
       form.append('contractId', contractId);
       const file: any = { uri, name: 'contract.pdf', type: 'application/pdf' };
@@ -276,7 +295,7 @@ export default function ContractScreen() {
     } finally {
       setIsUploading(false);
     }
-  }, [html, contractId, accessToken, navigation]);
+  }, [signatureDataUrl, contractId, accessToken, navigation]);
 
   const placeOrderAfterSigned = React.useCallback(async () => {
     const body: any = {
@@ -407,7 +426,13 @@ export default function ContractScreen() {
           <Text>Đóng</Text>
         </TouchableOpacity>
         <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: '#000' }}>Hợp đồng</Text>
-        <View style={{ width: 48 }} />
+        {contractId ? (
+          <TouchableOpacity onPress={() => { setPdfLoading(true); setShowPdfModal(true); }} style={{ padding: 6 }}>
+            <Text style={{ color: '#000' }}>Xem PDF</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 48 }} />
+        )}
       </View>
 
       {isLoading ? (
@@ -460,6 +485,34 @@ export default function ContractScreen() {
             </View>
           </View>
         </ScrollView>
+      )}
+
+      {/* PDF Viewer (proxy endpoint to avoid 401) */}
+      {showPdfModal && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#fff' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+            <TouchableOpacity onPress={() => setShowPdfModal(false)} style={{ padding: 6 }}>
+              <Text>Đóng</Text>
+            </TouchableOpacity>
+            <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: '#000' }}>Hợp đồng PDF</Text>
+            <View style={{ width: 48 }} />
+          </View>
+          <View style={{ flex: 1 }}>
+            {pdfLoading && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                <ActivityIndicator />
+              </View>
+            )}
+            <WebView
+              originWhitelist={["*"]}
+              source={{ uri: `${API_URL}/api/contracts/${contractId}/pdf`, headers: { Authorization: `Bearer ${accessToken}` } }}
+              onLoadEnd={() => setPdfLoading(false)}
+              startInLoadingState
+              style={{ flex: 1 }}
+              allowsBackForwardNavigationGestures
+            />
+          </View>
+        </View>
       )}
     </SafeAreaView>
   );
