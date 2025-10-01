@@ -460,7 +460,7 @@ export default function OrderDetailScreen() {
       {/* Contract Viewer Modal */}
       <Modal visible={showContractModal} animationType="slide" onRequestClose={() => setShowContractModal(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+          <View style={{ height: 56 + insets.top, paddingTop: insets.top, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: '#fff' }}>
             <TouchableOpacity onPress={() => setShowContractModal(false)} style={{ padding: 8 }}>
               <Text style={{ fontSize: 16 }}>Đóng</Text>
             </TouchableOpacity>
