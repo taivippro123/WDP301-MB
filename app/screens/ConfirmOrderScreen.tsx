@@ -284,6 +284,7 @@ export default function ConfirmOrderScreen() {
       (navigation as any).navigate('Contract', {
         productId: (product as any)?._id,
         sellerId: (product as any)?.seller?._id,
+        // Pass through product with enriched seller contact for contract rendering
         product,
         receiver,
         unitPrice: Number((product as any)?.price) || 0,

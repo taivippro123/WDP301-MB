@@ -33,6 +33,8 @@ export default function ContractScreen() {
   const [signatureDataUrl, setSignatureDataUrl] = React.useState<string | null>(null);
   const [isSigning, setIsSigning] = React.useState<boolean>(false);
   const signatureRef = React.useRef<any>(null);
+  const pendingSigResolve = React.useRef<((s: string) => void) | null>(null);
+  const [productDetail, setProductDetail] = React.useState<any>(null);
 
   function numberToVietnameseWords(n: number): string {
     const dv = ['','một','hai','ba','bốn','năm','sáu','bảy','tám','chín'];
@@ -64,7 +66,12 @@ export default function ContractScreen() {
     return [r.addressLine, r.ward, r.district, r.province].filter(Boolean).join(', ');
   }
 
-  function buildPrettyHtml() {
+  function formatSellerAddress(p: any): string {
+    const a = p?.seller?.address || {};
+    return [a.houseNumber, a.ward, a.district, a.province].filter(Boolean).join(', ');
+  }
+
+  function buildPrettyHtml(overrideSig?: string | null) {
     const p = placeholdersRef.current || {} as any;
     const today = new Date();
     const dd = String(today.getDate()).padStart(2, '0');
@@ -73,13 +80,25 @@ export default function ContractScreen() {
     const unit = typeof unitPrice === 'number' ? unitPrice : (p.unitPrice || 0);
     const currency = new Intl.NumberFormat('vi-VN').format(Number(unit || 0));
     const currencyText = numberToVietnameseWords(Number(unit || 0));
-    const productTitle = p.productTitle || (product?.title || '');
-    const sellerName = p.sellerName || 'Bên bán';
+    const productTitle = p.productTitle || (productDetail?.title || product?.title || '');
+    const sellerName = p.sellerName || productDetail?.seller?.name || (product as any)?.seller?.name || 'Bên bán';
+    const sellerPhone = productDetail?.seller?.phone || (product as any)?.seller?.phone || '';
+    const sellerAddress = formatSellerAddress(productDetail || (product as any)) || '';
+    const brand = productDetail?.brand || (product as any)?.brand || '';
+    const model = productDetail?.model || (product as any)?.model || '';
+    const year = productDetail?.year || (product as any)?.year || '';
+    const conditionRaw = (productDetail?.condition || (product as any)?.condition || '').toString().toLowerCase();
+    const condition = (() => {
+      if (conditionRaw === 'used') return 'cũ';
+      if (conditionRaw === 'refurbished') return 'tân trang';
+      return productDetail?.condition || (product as any)?.condition || '';
+    })();
     const buyerName = p.buyerName || (receiver?.name || 'Bên mua');
     const receiverPhone = receiver?.phone || '';
     const deliveryPlace = fullReceiverAddress();
     const deliveryDate = (() => { const d = new Date(); d.setDate(d.getDate()+3); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })();
-    const signImg = signatureDataUrl ? `<img src="${signatureDataUrl}" style="height:80px;" />` : '<div style="height:80px"></div>';
+    const sig = (overrideSig !== undefined ? overrideSig : signatureDataUrl) || null;
+    const signImg = sig ? `<img src="${sig}" style="height:80px;" />` : '<div style="height:80px"></div>';
 
     return `<!DOCTYPE html>
 <html lang="vi">
@@ -114,7 +133,6 @@ export default function ContractScreen() {
   <div class="divider"></div>
   <div class="center" style="margin: 10px 0 18px;">
     <div style="font-weight:700; font-size: 18px;">HỢP ĐỒNG MUA BÁN XE ĐIỆN / PIN XE ĐIỆN</div>
-    <div class="small muted">Số: [Tự sinh khi tạo đơn]</div>
   </div>
 
   <div class="row small muted">Hôm nay, ngày ${dd} tháng ${mm} năm ${yyyy}, chúng tôi gồm:</div>
@@ -122,10 +140,10 @@ export default function ContractScreen() {
   <div class="section">
     <div class="title">BÊN BÁN (Bên A):</div>
     <ul>
-      <li>Họ và tên/Tên doanh nghiệp: ${sellerName} <span class="signed"></span></li>
+      <li>Họ và tên/Tên doanh nghiệp: ${sellerName} <span class="signed">(đã ký)</span></li>
       <li>CMND/CCCD/MST: …………………………………</li>
-      <li>Địa chỉ: …………………………………</li>
-      <li>Điện thoại: …………………………………</li>
+      <li>Địa chỉ: ${sellerAddress || '…'}</li>
+      <li>Điện thoại: ${sellerPhone || '…'}</li>
     </ul>
   </div>
 
@@ -144,11 +162,11 @@ export default function ContractScreen() {
   <div class="section">
     <div class="title">ĐIỀU 1. ĐỐI TƯỢNG HỢP ĐỒNG</div>
     <ul>
-      <li>Loại: [Xe điện/Pin xe điện]</li>
-      <li>Nhãn hiệu: …………………………………</li>
-      <li>Model/Đời: …………………………………</li>
-      <li>Năm sản xuất: …………………………………</li>
-      <li>Tình trạng: …………………………………</li>
+      <li>Loại: Xe điện</li>
+      <li>Nhãn hiệu: ${brand || '…'}</li>
+      <li>Model/Đời: ${model || '…'}</li>
+      <li>Năm sản xuất: ${year || '…'}</li>
+      <li>Tình trạng: ${condition || '…'}</li>
       <li>Sản phẩm: ${productTitle}</li>
       <li>Giá trị còn lại của pin (nếu có): …………………………………</li>
     </ul>
@@ -158,9 +176,9 @@ export default function ContractScreen() {
     <div class="title">ĐIỀU 2. GIÁ BÁN VÀ PHƯƠNG THỨC THANH TOÁN</div>
     <ul>
       <li>Giá bán: ${currency} VNĐ (Bằng chữ: <strong>${currencyText}</strong>)</li>
-      <li>Giá trên đã bao gồm/không bao gồm chi phí vận chuyển, thuế, phí khác.</li>
-      <li>Phương thức thanh toán: ví điện tử</li>
-      <li>Thời hạn thanh toán: Ngay khi ký hợp đồng / theo thỏa thuận khác.</li>
+      <li>Giá trên không bao gồm chi phí vận chuyển, thuế, phí khác.</li>
+      <li>Phương thức thanh toán: Ví điện tử Ecoin</li>
+      <li>Thời hạn thanh toán: Ngay khi ký hợp đồng</li>
     </ul>
   </div>
 
@@ -210,7 +228,8 @@ export default function ContractScreen() {
     <div class="signBox">
       <div><strong>ĐẠI DIỆN BÊN A (Bán)</strong></div>
       <div class="small muted">Ký, ghi rõ họ tên</div>
-      <div style="height:80px"></div>
+      <div style="margin-top: 33px; font-weight: 800;">Đã ký</div>
+      <div style="margin-top: 24px;"></div>
       <div>${sellerName}</div>
       <div class="signed"></div>
     </div>
@@ -222,8 +241,6 @@ export default function ContractScreen() {
       <div class="unsigned"></div>
     </div>
   </div>
-
-  <div class="small muted" style="margin-top: 24px;">Vui lòng ký trên ứng dụng để tiếp tục.</div>
 </body>
 </html>`;
   }
@@ -231,6 +248,8 @@ export default function ContractScreen() {
   React.useEffect(() => {
     (async () => {
       try {
+        // Prefer product from params immediately for rendering
+        try { if (product && (product as any)._id) setProductDetail(product as any); } catch {}
         const res1 = await fetch(`${API_URL}/api/contracts/initiate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
@@ -241,7 +260,15 @@ export default function ContractScreen() {
         setContractId(d1?.data?.contractId);
         try { placeholdersRef.current = d1?.data?.template?.placeholders || null; } catch {}
 
-        // Prefer pretty client-side template for nicer layout
+        // Fetch product detail to enrich contract content (brand/model/year/condition and seller contact)
+        try {
+          const rp = await fetch(`${API_URL}/api/products/${productId}`);
+          const pd = await rp.json();
+          const prod = pd?.data || pd?.product || (Array.isArray(pd?.products) ? pd.products[0] : null) || pd || null;
+          if (prod && prod._id) setProductDetail(prod);
+        } catch {}
+
+        // First render
         setHtml(buildPrettyHtml());
       } catch (e: any) {
         Alert.alert('Lỗi', e?.message || 'Không tải được hợp đồng');
@@ -252,6 +279,11 @@ export default function ContractScreen() {
     })();
   }, [productId, sellerId, accessToken, navigation]);
 
+  // Rebuild HTML when dependent data changes (product detail, signature)
+  React.useEffect(() => {
+    setHtml(buildPrettyHtml());
+  }, [productDetail, signatureDataUrl]);
+
   const signAndUpload = React.useCallback(async () => {
     try {
       if (!contractId) {
@@ -259,35 +291,42 @@ export default function ContractScreen() {
         return;
       }
       setIsUploading(true);
-      // If user has drawn a signature, let server render final PDF with signature
-      if (signatureDataUrl) {
-        const form = new FormData();
-        form.append('contractId', contractId);
-        form.append('signature', signatureDataUrl);
-        const res = await fetch(`${API_URL}/api/contracts/sign`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
-          body: form as any,
+      let sigForPrint: string | null = signatureDataUrl;
+      if (!sigForPrint && signatureRef?.current?.readSignature) {
+        sigForPrint = await new Promise<string | null>((resolve) => {
+          let settled = false;
+          const to = setTimeout(() => { if (!settled) resolve(null); }, 1500);
+          pendingSigResolve.current = (s: string) => { try { clearTimeout(to); } catch {}; settled = true; resolve(s); };
+          try { signatureRef.current.readSignature(); } catch { resolve(null); }
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || 'Upload thất bại');
-        return true;
       }
-
-      // Fallback: no signature captured => generate client PDF from current HTML
-      const htmlToPrint = buildPrettyHtml();
+      // Generate PDF from HTML using the freshest signature (override)
+      const htmlToPrint = buildPrettyHtml(sigForPrint);
       const { uri } = await Print.printToFileAsync({ html: htmlToPrint });
+
+      // Upload to Cloudinary unsigned preset (public, previewable)
+      const formCloud = new FormData();
+      formCloud.append('file', { uri, name: 'contract.pdf', type: 'application/pdf' } as any);
+      formCloud.append('upload_preset', 'unsigned_contracts');
+      const cloudRes = await fetch('https://api.cloudinary.com/v1_1/'+(process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME||'')+'/image/upload', {
+        method: 'POST',
+        body: formCloud as any,
+      });
+      const cloudData = await cloudRes.json();
+      if (!cloudRes.ok) throw new Error(cloudData?.error?.message || 'Upload Cloudinary thất bại');
+      const finalUrl: string = cloudData.secure_url;
+
+      // Notify backend to finalize contract (store URL and mark signed)
       const form = new FormData();
       form.append('contractId', contractId);
-      const file: any = { uri, name: 'contract.pdf', type: 'application/pdf' };
-      form.append('pdf', file);
+      form.append('finalUrl', finalUrl);
       const res = await fetch(`${API_URL}/api/contracts/sign`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}` },
         body: form as any,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Upload thất bại');
+      if (!res.ok) throw new Error(data?.error || 'Finalize thất bại');
       return true;
     } catch (e: any) {
       Alert.alert('Lỗi', e?.message || 'Không thể ký hợp đồng');
@@ -421,19 +460,14 @@ export default function ContractScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <SafeAreaView style={{ backgroundColor: '#fff' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
         <TouchableOpacity onPress={() => (navigation as any).goBack()} style={{ padding: 6 }}>
           <Text>Đóng</Text>
         </TouchableOpacity>
-        <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: '#000' }}>Hợp đồng</Text>
-        {contractId ? (
-          <TouchableOpacity onPress={() => { setPdfLoading(true); setShowPdfModal(true); }} style={{ padding: 6 }}>
-            <Text style={{ color: '#000' }}>Xem PDF</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 48 }} />
-        )}
+        <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: '#000', paddingRight: 48 }}>Hợp đồng</Text>
       </View>
+      </SafeAreaView>
 
       {isLoading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -461,7 +495,7 @@ export default function ContractScreen() {
             <View style={{ height: 220, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
               <Signature
                 ref={signatureRef}
-                onOK={(sig: string) => setSignatureDataUrl(sig)}
+                onOK={(sig: string) => { setSignatureDataUrl(sig); try { pendingSigResolve.current?.(sig); pendingSigResolve.current = null; } catch {} }}
                 onClear={() => setSignatureDataUrl(null)}
                 onBegin={() => setIsSigning(true)}
                 onEnd={() => setIsSigning(false)}
