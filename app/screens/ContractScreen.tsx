@@ -178,7 +178,7 @@ export default function ContractScreen() {
       <li>Giá bán: ${currency} VNĐ (Bằng chữ: <strong>${currencyText}</strong>)</li>
       <li>Giá trên không bao gồm chi phí vận chuyển, thuế, phí khác.</li>
       <li>Phương thức thanh toán: Ví điện tử Ecoin</li>
-      <li>Thời hạn thanh toán: Ngay khi ký hợp đồng</li>
+      <li>Thời hạn thanh toán: Ngay khi ký hợp đồng</àli>
     </ul>
   </div>
 
