@@ -15,13 +15,16 @@ type ContractParams = {
   receiver?: { name: string; phone: string; addressLine: string; ward: string; district: string; province: string };
   unitPrice?: number;
   shippingFee?: number;
+  previewOnly?: boolean;
+  sellerContractHtmlOverride?: string | null;
+  sellerSignatureOverride?: string | null;
 };
 
 export default function ContractScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { accessToken } = useAuth();
-  const { productId, sellerId, product, receiver, unitPrice, shippingFee } = (route.params as any) as ContractParams;
+  const { productId, sellerId, product, receiver, unitPrice, shippingFee, previewOnly, sellerContractHtmlOverride, sellerSignatureOverride } = (route.params as any) as ContractParams;
 
   const [isLoading, setIsLoading] = React.useState(true);
   const [html, setHtml] = React.useState('');
@@ -35,6 +38,8 @@ export default function ContractScreen() {
   const signatureRef = React.useRef<any>(null);
   const pendingSigResolve = React.useRef<((s: string) => void) | null>(null);
   const [productDetail, setProductDetail] = React.useState<any>(null);
+  const [sellerContractHtml, setSellerContractHtml] = React.useState<string | null>(null);
+  const [sellerSignature, setSellerSignature] = React.useState<string | null>(null);
 
   function numberToVietnameseWords(n: number): string {
     const dv = ['','một','hai','ba','bốn','năm','sáu','bảy','tám','chín'];
@@ -99,6 +104,7 @@ export default function ContractScreen() {
     const deliveryDate = (() => { const d = new Date(); d.setDate(d.getDate()+3); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })();
     const sig = (overrideSig !== undefined ? overrideSig : signatureDataUrl) || null;
     const signImg = sig ? `<img src="${sig}" style="height:80px;" />` : '<div style="height:80px"></div>';
+    const sellerSignImg = sellerSignature ? `<img src="${sellerSignature}" style="height:80px;" />` : '<div class="small muted" style="height:80px; display:flex; align-items:center; justify-content:center;">Chưa ký</div>';
 
     return `<!DOCTYPE html>
 <html lang="vi">
@@ -224,12 +230,13 @@ export default function ContractScreen() {
     </ul>
   </div>
 
+  ${sellerContractHtml || ''}
+
   <div class="grid">
     <div class="signBox">
       <div><strong>ĐẠI DIỆN BÊN A (Bán)</strong></div>
       <div class="small muted">Ký, ghi rõ họ tên</div>
-      <div style="margin-top: 33px; font-weight: 800;">Đã ký</div>
-      <div style="margin-top: 24px;"></div>
+      ${sellerSignImg}
       <div>${sellerName}</div>
       <div class="signed"></div>
     </div>
@@ -248,41 +255,66 @@ export default function ContractScreen() {
   React.useEffect(() => {
     (async () => {
       try {
-        // Prefer product from params immediately for rendering
-        try { if (product && (product as any)._id) setProductDetail(product as any); } catch {}
-        const res1 = await fetch(`${API_URL}/api/contracts/initiate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({ product_id: productId, seller_id: sellerId })
-        });
-        const d1 = await res1.json();
-        if (!res1.ok) throw new Error(d1?.error || 'Không khởi tạo hợp đồng được');
-        setContractId(d1?.data?.contractId);
-        try { placeholdersRef.current = d1?.data?.template?.placeholders || null; } catch {}
+        if (previewOnly) {
+          // Preview-only: no API calls, render with empty data
+          placeholdersRef.current = null;
+          setProductDetail(null);
+          setSellerContractHtml(sellerContractHtmlOverride || null);
+          setSellerSignature(sellerSignatureOverride || null);
+          setContractId(null);
+          setHtml(buildPrettyHtml(null));
+        } else {
+          // Prefer product from params immediately for rendering
+          try { if (product && (product as any)._id) setProductDetail(product as any); } catch {}
+          const res1 = await fetch(`${API_URL}/api/contracts/initiate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ product_id: productId, seller_id: sellerId })
+          });
+          const d1 = await res1.json();
+          if (!res1.ok) throw new Error(d1?.error || 'Không khởi tạo hợp đồng được');
+          setContractId(d1?.data?.contractId);
+          try { placeholdersRef.current = d1?.data?.template?.placeholders || null; } catch {}
 
-        // Fetch product detail to enrich contract content (brand/model/year/condition and seller contact)
-        try {
-          const rp = await fetch(`${API_URL}/api/products/${productId}`);
-          const pd = await rp.json();
-          const prod = pd?.data || pd?.product || (Array.isArray(pd?.products) ? pd.products[0] : null) || pd || null;
-          if (prod && prod._id) setProductDetail(prod);
-        } catch {}
+          // Fetch product detail to enrich contract content (brand/model/year/condition and seller contact)
+          try {
+            const rp = await fetch(`${API_URL}/api/products/${productId}`);
+            const pd = await rp.json();
+            const prod = pd?.data || pd?.product || (Array.isArray(pd?.products) ? pd.products[0] : null) || pd || null;
+            if (prod && prod._id) setProductDetail(prod);
+          } catch {}
 
-        // First render
-        setHtml(buildPrettyHtml());
+          // Fetch seller's custom contract template
+          try {
+            const rt = await fetch(`${API_URL}/api/products/${productId}/contract-template`);
+            const td = await rt.json();
+            if (rt.ok && td?.data?.contractTemplate) {
+              setSellerContractHtml(td.data.contractTemplate.htmlContent || null);
+              setSellerSignature(td.data.contractTemplate.sellerSignature || null);
+            }
+          } catch {}
+
+          // First render
+          setHtml(buildPrettyHtml());
+        }
       } catch (e: any) {
-        Alert.alert('Lỗi', e?.message || 'Không tải được hợp đồng');
-        (navigation as any).goBack();
+        if (!previewOnly) {
+          Alert.alert('Lỗi', e?.message || 'Không tải được hợp đồng');
+          (navigation as any).goBack();
+        } else {
+          // In preview, just render blank
+          setHtml(buildPrettyHtml(null));
+        }
       } finally {
         setIsLoading(false);
       }
     })();
-  }, [productId, sellerId, accessToken, navigation]);
+  }, [productId, sellerId, accessToken, navigation, previewOnly, sellerContractHtmlOverride, sellerSignatureOverride]);
 
-  // Rebuild HTML when dependent data changes (product detail, signature)
+  // Rebuild HTML when dependent data changes (product detail, signature, seller contract)
   React.useEffect(() => {
     setHtml(buildPrettyHtml());
-  }, [productDetail, signatureDataUrl]);
+  }, [productDetail, signatureDataUrl, sellerContractHtml, sellerSignature]);
 
   const signAndUpload = React.useCallback(async () => {
     try {
@@ -491,33 +523,35 @@ export default function ContractScreen() {
             scrollEnabled={false}
           />
 
-          <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: '#eee' }}>
-            <View style={{ height: 220, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
-              <Signature
-                ref={signatureRef}
-                onOK={(sig: string) => { setSignatureDataUrl(sig); try { pendingSigResolve.current?.(sig); pendingSigResolve.current = null; } catch {} }}
-                onClear={() => setSignatureDataUrl(null)}
-                onBegin={() => setIsSigning(true)}
-                onEnd={() => setIsSigning(false)}
-                descriptionText="Ký vào đây"
-                webStyle={`
-                  .m-signature-pad--footer { display: flex; justify-content: space-between; }
-                  .m-signature-pad--footer .button { background: #FFD700; color: #000; }
-                `}
-              />
+          {!previewOnly && (
+            <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: '#eee' }}>
+              <View style={{ height: 220, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, overflow: 'hidden', marginBottom: 12 }}>
+                <Signature
+                  ref={signatureRef}
+                  onOK={(sig: string) => { setSignatureDataUrl(sig); try { pendingSigResolve.current?.(sig); pendingSigResolve.current = null; } catch {} }}
+                  onClear={() => setSignatureDataUrl(null)}
+                  onBegin={() => setIsSigning(true)}
+                  onEnd={() => setIsSigning(false)}
+                  descriptionText="Ký vào đây"
+                  webStyle={`
+                    .m-signature-pad--footer { display: flex; justify-content: space-between; }
+                    .m-signature-pad--footer .button { background: #FFD700; color: #000; }
+                  `}
+                />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={() => { try { signatureRef.current?.clearSignature?.(); } catch {} setSignatureDataUrl(null); }}
+                  style={{ flex: 1, backgroundColor: '#eee', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginRight: 8 }}
+                >
+                  <Text style={{ color: '#000', fontWeight: '700' }}>Xóa chữ ký</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleConfirm} disabled={isUploading} style={{ flex: 1, backgroundColor: '#FFD700', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginLeft: 8 }}>
+                  {isUploading ? <ActivityIndicator color="#000" /> : <Text style={{ color: '#000', fontWeight: '700' }}>Ký và đặt hàng</Text>}
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <TouchableOpacity
-                onPress={() => { try { signatureRef.current?.clearSignature?.(); } catch {} setSignatureDataUrl(null); }}
-                style={{ flex: 1, backgroundColor: '#eee', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginRight: 8 }}
-              >
-                <Text style={{ color: '#000', fontWeight: '700' }}>Xóa chữ ký</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleConfirm} disabled={isUploading} style={{ flex: 1, backgroundColor: '#FFD700', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginLeft: 8 }}>
-                {isUploading ? <ActivityIndicator color="#000" /> : <Text style={{ color: '#000', fontWeight: '700' }}>Ký và đặt hàng</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
+          )}
         </ScrollView>
       )}
 

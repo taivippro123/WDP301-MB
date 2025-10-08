@@ -24,6 +24,7 @@ import NotificationScreen from './screens/NotificationScreen';
 import OrderDetailScreen from './screens/OrderDetailScreen';
 import OrderHistory from './screens/OrderHistory';
 import PostListingScreen from './screens/PostListingScreen';
+import ProductContractEditor from './screens/ProductContractEditor';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import TopUpScreen from './screens/TopUpScreen';
@@ -132,6 +133,17 @@ function HomeStack({ navigation: parentNavigation }: { navigation: any }) {
           </ProtectedScreen>
         )}
       </Stack.Screen>
+    </Stack.Navigator>
+  );
+}
+
+// Create a stack for Posting flow so we can navigate to ProductContractEditor
+function PostStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="PostListing" component={PostListingScreen} />
+      <Stack.Screen name="ContractPreview" component={ContractScreen} />
+      <Stack.Screen name="ProductContractEditor" component={ProductContractEditor} />
     </Stack.Navigator>
   );
 }
@@ -391,7 +403,7 @@ function AppContent() {
       <Tab.Screen name="Đăng tin" options={{ tabBarLabel: () => null }}>
         {({ navigation }) => (
           <ProtectedScreen screenName="Đăng tin" navigation={navigation}>
-            <PostListingScreen />
+            <PostStack />
           </ProtectedScreen>
         )}
       </Tab.Screen>

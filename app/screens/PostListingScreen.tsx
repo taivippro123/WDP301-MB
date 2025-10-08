@@ -21,9 +21,11 @@ import {
 } from 'react-native';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
+import { useNavigation } from '@react-navigation/native';
 
 export default function PostListingScreen() {
     const { accessToken, logout } = useAuth();
+    const navigation = useNavigation();
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -219,8 +221,18 @@ export default function PostListingScreen() {
         }
                 throw new Error(data?.message || data?.error || 'Không thể tạo sản phẩm');
             }
-            // Success: data is the created product object
+            // Success: navigate to ProductContractEditor with the created product ID
+            const created = data?.data || data?.product || data || {};
+            const createdId = created?._id || created?.id;
             Alert.alert('Thành công', 'Tin đăng đã được tạo thành công');
+            try {
+                if (createdId) {
+                    (navigation as any).navigate('ProductContractEditor', {
+                        productId: createdId,
+                        productTitle: created?.title || String(formData.title || 'Sản phẩm')
+                    });
+                }
+            } catch {}
         } catch (e: any) {
             console.log('Product creation error:', e);
             Alert.alert('Lỗi', e?.message || 'Có lỗi xảy ra');
@@ -465,6 +477,7 @@ export default function PostListingScreen() {
                             {!!errors.condition && <Text style={styles.errorText}>{errors.condition}</Text>}
                            
                         </View>
+
 
                         {/* Specifications */}
                         <View style={styles.section}>
