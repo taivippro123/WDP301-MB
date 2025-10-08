@@ -79,7 +79,7 @@ export default function RegisterScreen({ onRegister, onBackToLogin }: RegisterSc
           email: formData.email,
           password: formData.password,
           phone: formData.phone,
-          role: 'customer',
+          role: 'user',
         }),
       });
 
@@ -135,7 +135,7 @@ export default function RegisterScreen({ onRegister, onBackToLogin }: RegisterSc
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Form */}
-        <View style={styles.form}>
+        <View>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>
               Họ và tên <Text style={styles.required}>*</Text>
