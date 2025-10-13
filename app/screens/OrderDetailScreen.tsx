@@ -12,12 +12,14 @@ type OrderItem = {
   finalAmount: number;
   shippingFee?: number;
   unitPrice?: number;
+  totalAmount?: number; // for deposit remaining calculation
   createdAt: string;
   shipping?: {
     method?: string;
     trackingNumber?: string;
     carrier?: string;
   };
+  shippingAddress?: { fullName?: string; phone?: string; address?: string };
   productId?: { _id: string; title?: string; images?: string[] } | string;
   contract?: { pdfUrl?: string; signedAt?: string; contractNumber?: string | null } | null;
 };
@@ -103,6 +105,7 @@ export default function OrderDetailScreen() {
 
   const timeline = getTimelineStatus();
   const effectiveStatus = (details?.status || order.status || '').toString().toLowerCase().trim();
+  const isDeposit = effectiveStatus === 'deposit' || (order?.shipping?.method === 'in-person');
   const productTitle = typeof order.productId === 'object' && order.productId && 'title' in order.productId 
     ? (order.productId as any).title 
     : 'Sản phẩm';
@@ -111,6 +114,7 @@ export default function OrderDetailScreen() {
   React.useEffect(() => {
     (async () => {
       if (!accessToken) return;
+      if (isDeposit) return; // Không gọi GHN cho đơn đặt cọc
       const oc = order?.shipping?.trackingNumber || order?.orderNumber;
       if (!oc) return;
       
@@ -136,7 +140,7 @@ export default function OrderDetailScreen() {
         });
       } catch {}
     })();
-  }, [accessToken, order]);
+  }, [accessToken, order, isDeposit]);
 
   // Fetch profile address
   React.useEffect(() => {
@@ -239,54 +243,65 @@ export default function OrderDetailScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Timeline */}
-        <View style={styles.timelineContainer}>
-          <Text style={styles.sectionTitle}>Trạng thái vận chuyển</Text>
-          <View style={styles.timeline}>
-            <View style={styles.timelineItem}>
-              <View style={[styles.timelineDot, timeline.step1 && styles.timelineDotActive]}>
-                {timeline.step1 && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={[styles.timelineLabel, timeline.step1 && styles.timelineLabelActive]}>
-                Đã vận chuyển
-              </Text>
-            </View>
-            
-            <View style={[styles.timelineLine, timeline.step2 && styles.timelineLineActive]} />
-            
-            <View style={styles.timelineItem}>
-              <View style={[styles.timelineDot, timeline.step2 && styles.timelineDotActive]}>
-                {timeline.step2 && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={[styles.timelineLabel, timeline.step2 && styles.timelineLabelActive]}>
-                Đang giao hàng
-              </Text>
-            </View>
-            
-            <View style={[styles.timelineLine, timeline.step3 && styles.timelineLineActive]} />
-            
-            <View style={styles.timelineItem}>
-              <View style={[styles.timelineDot, timeline.step3 && styles.timelineDotActive]}>
-                {timeline.step3 && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={[styles.timelineLabel, timeline.step3 && styles.timelineLabelActive]}>
-                Đã giao hàng
+        {/* Timeline / Deposit banner */}
+        {isDeposit ? (
+          <View style={styles.timelineContainer}>
+            <Text style={styles.sectionTitle}>Trạng thái đơn đặt cọc</Text>
+            <View style={[styles.infoCard]}> 
+              <Text style={{ color: '#000' }}>
+                Đã đặt cọc 500.000 ₫ - Chờ admin xác nhận giao dịch. Gặp trực tiếp để hoàn tất.
               </Text>
             </View>
           </View>
-          
-          <View style={styles.shippingInfo}>
-            <Text style={styles.shippingLabel}>Đơn vị vận chuyển: GHN</Text>
-            {order.shipping?.trackingNumber && (
-              <Text style={styles.trackingLabel}>
-                Mã vận đơn: {order.shipping.trackingNumber}
-              </Text>
-            )}
-            {details?.leadtime ? (
-              <Text style={styles.trackingLabel}>Ngày nhận dự kiến: {formatDateTime(details.leadtime)}</Text>
-            ) : null}
+        ) : (
+          <View style={styles.timelineContainer}>
+            <Text style={styles.sectionTitle}>Trạng thái vận chuyển</Text>
+            <View style={styles.timeline}>
+              <View style={styles.timelineItem}>
+                <View style={[styles.timelineDot, timeline.step1 && styles.timelineDotActive]}>
+                  {timeline.step1 && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={[styles.timelineLabel, timeline.step1 && styles.timelineLabelActive]}>
+                  Đã vận chuyển
+                </Text>
+              </View>
+              
+              <View style={[styles.timelineLine, timeline.step2 && styles.timelineLineActive]} />
+              
+              <View style={styles.timelineItem}>
+                <View style={[styles.timelineDot, timeline.step2 && styles.timelineDotActive]}>
+                  {timeline.step2 && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={[styles.timelineLabel, timeline.step2 && styles.timelineLabelActive]}>
+                  Đang giao hàng
+                </Text>
+              </View>
+              
+              <View style={[styles.timelineLine, timeline.step3 && styles.timelineLineActive]} />
+              
+              <View style={styles.timelineItem}>
+                <View style={[styles.timelineDot, timeline.step3 && styles.timelineDotActive]}>
+                  {timeline.step3 && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={[styles.timelineLabel, timeline.step3 && styles.timelineLabelActive]}>
+                  Đã giao hàng
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.shippingInfo}>
+              <Text style={styles.shippingLabel}>Đơn vị vận chuyển: GHN</Text>
+              {order.shipping?.trackingNumber && (
+                <Text style={styles.trackingLabel}>
+                  Mã vận đơn: {order.shipping.trackingNumber}
+                </Text>
+              )}
+              {details?.leadtime ? (
+                <Text style={styles.trackingLabel}>Ngày nhận dự kiến: {formatDateTime(details.leadtime)}</Text>
+              ) : null}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Order Info */}
         <View style={styles.section}>
@@ -304,14 +319,33 @@ export default function OrderDetailScreen() {
               <Text style={styles.infoLabel}>Ngày đặt</Text>
               <Text style={styles.infoValue}>{formatDateTime(order.createdAt)}</Text>
             </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Tổng tiền</Text>
-              <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(order.finalAmount)}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Phí vận chuyển</Text>
-              <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(order.shippingFee ?? 0)}</Text>
-            </View>
+            {isDeposit ? (
+              <>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Giá sản phẩm</Text>
+                  <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(order.unitPrice || order.totalAmount)}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Đã đặt cọc</Text>
+                  <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(order.finalAmount)}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Còn lại</Text>
+                  <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(Math.max((order.unitPrice || order.totalAmount || 0) - (order.finalAmount || 0), 0))}</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Tổng tiền</Text>
+                  <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(order.finalAmount)}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Phí vận chuyển</Text>
+                  <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(order.shippingFee ?? 0)}</Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 
@@ -322,15 +356,27 @@ export default function OrderDetailScreen() {
             <View style={styles.infoCard}>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Tên</Text>
-                <Text style={styles.infoValue}>{receiverInfo.name || details?.to_name || '—'}</Text>
+                <Text style={styles.infoValue}>{
+                  isDeposit 
+                    ? (order?.shippingAddress?.fullName || (order as any)?.buyerId?.name || '—')
+                    : (receiverInfo.name || details?.to_name || '—')
+                }</Text>
               </View>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Số điện thoại</Text>
-                <Text style={styles.infoValue}>{receiverInfo.phone || details?.to_phone || '—'}</Text>
+                <Text style={styles.infoValue}>{
+                  isDeposit 
+                    ? (order?.shippingAddress?.phone || (order as any)?.buyerId?.phone || '—')
+                    : (receiverInfo.phone || details?.to_phone || '—')
+                }</Text>
               </View>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Địa chỉ</Text>
-                <Text style={[styles.infoValue, styles.addressText]}>{profileAddress || receiverInfo.address || details?.to_address || '—'}</Text>
+                <Text style={[styles.infoValue, styles.addressText]}>{
+                  isDeposit 
+                    ? (order?.shippingAddress?.address || profileAddress || '—')
+                    : (profileAddress || receiverInfo.address || details?.to_address || '—')
+                }</Text>
               </View>
             </View>
           </View>
@@ -359,7 +405,7 @@ export default function OrderDetailScreen() {
           {(() => {
             const s = (effectiveStatus || '').toLowerCase().trim();
             // Hard guard: không hiển thị nút nào khi đã giao/đã hủy/đã hoàn
-            if (s === 'delivered' || s.includes('cancel') || s === 'returned') return null;
+            if (isDeposit || s === 'delivered' || s.includes('cancel') || s === 'returned') return null;
             const canCancel = s === 'ready_to_pick' || s === 'picking';
             const canReturn = (
               s === 'delivery_fail'

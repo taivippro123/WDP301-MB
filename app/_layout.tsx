@@ -29,6 +29,7 @@ import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import TopUpScreen from './screens/TopUpScreen';
 import TransactionHistory from './screens/TransactionHistory';
+import VehicleDepositScreen from './screens/VehicleDepositScreen';
 import WishlistScreen from './screens/WishlistScreen';
 
 const Tab = createBottomTabNavigator();
@@ -83,12 +84,83 @@ function ChatStack({ navigation: parentNavigation }: { navigation: any }) {
 function HomeStack({ navigation: parentNavigation }: { navigation: any }) {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="HomeList" component={HomeScreen} />
+      <Stack.Screen 
+        name="HomeList" 
+        component={HomeScreen}
+        listeners={{
+          focus: () => {
+            // Ensure bottom tab bar is restored when returning to HomeList
+            parentNavigation?.setOptions({
+              tabBarStyle: {
+                backgroundColor: 'white',
+                height: 90,
+                paddingBottom: 2,
+                paddingTop: 10,
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                borderTopWidth: 1,
+                borderTopColor: '#E5E5E7',
+              }
+            });
+          }
+        }}
+      />
       <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
       <Stack.Screen name="ConfirmOrder">
         {({ navigation }) => (
           <ProtectedScreen screenName="ConfirmOrder" navigation={navigation}>
             <ConfirmOrderScreen />
+          </ProtectedScreen>
+        )}
+      </Stack.Screen>
+      <Stack.Screen 
+        name="VehicleDeposit"
+        options={{ headerShown: false }}
+        listeners={{
+          focus: () => {
+            // Hide bottom navigation when VehicleDeposit is focused
+            parentNavigation?.setOptions({ tabBarStyle: { display: 'none' } });
+          },
+          beforeRemove: () => {
+            // Always restore tab bar when leaving VehicleDeposit by any action
+            parentNavigation?.setOptions({
+              tabBarStyle: {
+                backgroundColor: 'white',
+                height: 90,
+                paddingBottom: 2,
+                paddingTop: 10,
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                borderTopWidth: 1,
+                borderTopColor: '#E5E5E7',
+              }
+            });
+          },
+          blur: () => {
+            parentNavigation?.setOptions({
+              tabBarStyle: {
+                backgroundColor: 'white',
+                height: 90,
+                paddingBottom: 2,
+                paddingTop: 10,
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                borderTopWidth: 1,
+                borderTopColor: '#E5E5E7',
+              }
+            });
+          }
+        }}
+      >
+        {({ navigation }) => (
+          <ProtectedScreen screenName="VehicleDeposit" navigation={navigation}>
+            <VehicleDepositScreen />
           </ProtectedScreen>
         )}
       </Stack.Screen>

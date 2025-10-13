@@ -678,10 +678,17 @@ export default function ProductDetailScreen() {
                 <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
                 <Text style={styles.chatButtonText}>Chat</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.buyInlineButton} onPress={() => (navigation as any).navigate('ConfirmOrder', { product })}>
+              {product.category === 'vehicle' ? (
+                <TouchableOpacity style={styles.depositButton} onPress={() => (navigation as any).navigate('VehicleDeposit', { product })}>
+                  <Ionicons name="wallet" size={20} color="#fff" />
+                  <Text style={styles.depositButtonText}>Đặt cọc</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.buyInlineButton} onPress={() => (navigation as any).navigate('ConfirmOrder', { product })}>
                   <Ionicons name="cart" size={20} color="#fff" />
                   <Text style={styles.buyInlineText}>Mua</Text>
-              </TouchableOpacity>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
           </View>
@@ -1089,6 +1096,29 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   buyInlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 6,
+  },
+  depositButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#27ae60',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginLeft: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 3,
+  },
+  depositButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',

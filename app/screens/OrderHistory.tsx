@@ -158,6 +158,8 @@ export default function OrderHistory() {
     };
     const isMatch = (s: string) => {
       if (statusFilter === 'all') return true;
+      // Deposit orders (in-person vehicle flow)
+      if (statusFilter === 'deposit') return s === 'deposit';
       if (statusFilter === 'waiting_pick') return s === 'ready_to_pick' || s === 'picking';
       // "Chờ giao": gồm picked 
       if (statusFilter === 'delivering') return s === 'picked' ;
@@ -186,6 +188,7 @@ export default function OrderHistory() {
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersBar}>
           <FilterTab label="Tất cả" active={statusFilter === 'all'} onPress={() => setStatusFilter('all')} />
+          <FilterTab label="Đặt cọc" active={statusFilter === 'deposit'} onPress={() => setStatusFilter('deposit')} />
           <FilterTab label="Chờ lấy" active={statusFilter === 'waiting_pick'} onPress={() => setStatusFilter('waiting_pick')} />
           <FilterTab label="Chờ giao" active={statusFilter === 'delivering'} onPress={() => setStatusFilter('delivering')} />
           <FilterTab label="Đã giao" active={statusFilter === 'delivered'} onPress={() => setStatusFilter('delivered')} />
@@ -212,6 +215,7 @@ export default function OrderHistory() {
 
 function statusColor(status?: string) {
   const s = (status || '').toLowerCase();
+  if (s === 'deposit') return { color: '#f39c12' };
   if (s === 'ready_to_pick') return { color: '#2980b9' };
   if (s === 'picking' || s === 'money_collect_picking') return { color: '#8e44ad' };
   if (s === 'picked') return { color: '#8e44ad' };
@@ -231,6 +235,7 @@ function statusColor(status?: string) {
 
 function formatGhnStatus(status?: string) {
   const s = (status || '').toLowerCase();
+  if (s === 'deposit') return 'Đặt cọc';
   if (s === 'ready_to_pick') return 'Chờ lấy hàng';
   if (s === 'picking') return 'Đang lấy hàng';
   if (s === 'money_collect_picking') return 'Đang lấy hàng (thu hộ)';
