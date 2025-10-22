@@ -27,6 +27,7 @@ import PostListingScreen from './screens/PostListingScreen';
 import ProductContractEditor from './screens/ProductContractEditor';
 import ProductDetailScreen from './screens/ProductDetailScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import SubscriptionScreen from './screens/SubscriptionScreen';
 import TopUpScreen from './screens/TopUpScreen';
 import TransactionHistory from './screens/TransactionHistory';
 import VehicleDepositScreen from './screens/VehicleDepositScreen';
@@ -517,6 +518,7 @@ function AppContent() {
               <Stack.Screen name="OrderHistory" component={OrderHistory} />
               <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
               <Stack.Screen name="TransactionHistory" component={TransactionHistory} />
+              <Stack.Screen name="Subscription" component={SubscriptionScreen} />
               <Stack.Screen name="Wishlist">
                 {({ navigation }) => (
                   <ProtectedScreen screenName="Wishlist" navigation={navigation}>

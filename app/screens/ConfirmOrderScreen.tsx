@@ -273,7 +273,7 @@ export default function ConfirmOrderScreen() {
     }
   }, [receiver.districtCode, receiver.wardCode, calculateShipping]);
 
-  const total = Number(product?.price || 0) + Number(shippingFee || 0);
+  const total = Number(product?.price || 0);
 
   const goToContract = async () => {
     try {
@@ -313,10 +313,11 @@ export default function ConfirmOrderScreen() {
         Alert.alert('Thiếu thông tin', `Vui lòng bổ sung:\n- ${missing.join('\n- ')}`);
         return;
       }
-      if (!shippingFee || Number(shippingFee) <= 0) {
-        Alert.alert('Lỗi', 'Phí vận chuyển không hợp lệ. Vui lòng tính phí trước.');
-        return;
-      }
+      // Phí vận chuyển không bắt buộc cho tổng tiền hàng
+      // if (!shippingFee || Number(shippingFee) <= 0) {
+      //   Alert.alert('Lỗi', 'Phí vận chuyển không hợp lệ. Vui lòng tính phí trước.');
+      //   return;
+      // }
 
       setIsPlacingOrder(true);
 
@@ -492,7 +493,7 @@ export default function ConfirmOrderScreen() {
             </View>
             <View style={styles.divider} />
             <View style={styles.rowBetween}>
-              <Text style={styles.totalLabel}>Tổng cộng</Text>
+              <Text style={styles.totalLabel}>Tổng tiền hàng</Text>
               <Text style={styles.totalValue}>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}</Text>
             </View>
           </View>
@@ -502,7 +503,7 @@ export default function ConfirmOrderScreen() {
       {/* Bottom action */}
       <View style={styles.bottomBar}>
         <View>
-          <Text style={{ fontSize: 12, color: '#666' }}>Tổng cộng</Text>
+          <Text style={{ fontSize: 12, color: '#666' }}>Tổng tiền hàng</Text>
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#000' }}>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}</Text>
         </View>
         <TouchableOpacity style={[styles.placeOrderButton, isPlacingOrder && { opacity: 0.7 }]} onPress={goToContract} disabled={isPlacingOrder || isCalculating}>

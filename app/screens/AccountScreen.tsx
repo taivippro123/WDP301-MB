@@ -52,7 +52,7 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
     {
       section: 'Dịch vụ trả phí',
       items: [
-        { icon: 'shield-checkmark', title: 'Gói Pro', hasArrow: true, badge: 'PRO' }
+        { icon: 'shield-checkmark', title: 'Gói đăng ký', hasArrow: true, badge: 'PRO', action: 'open_subscription' }
       ]
     },
     {
@@ -187,6 +187,8 @@ export default function AccountScreen({ onLogout }: AccountScreenProps) {
         (navigation as any).navigate('OrderHistory');
       } else if (item.action === 'open_transactions') {
         (navigation as any).navigate('TransactionHistory');
+      } else if (item.action === 'open_subscription') {
+        (navigation as any).navigate('Subscription');
     } else {
       Alert.alert('Thông báo', `Tính năng "${item.title}" sẽ được phát triển trong tương lai`);
       }

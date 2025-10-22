@@ -28,6 +28,7 @@ export default function HomeScreen() {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [wishlistItems, setWishlistItems] = useState<string[]>([]);
+  const [wishlistLoading, setWishlistLoading] = useState<string | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerTranslateY = useRef(new Animated.Value(0)).current;
   const compactOpacity = useRef(new Animated.Value(0)).current;
@@ -90,7 +91,11 @@ export default function HomeScreen() {
       
       if (res.ok) {
         const json = await res.json();
-        const productIds = (json.items || []).map((item: any) => item.productId);
+        console.log('HomeScreen Wishlist API Response:', json); // Debug log
+        
+        // API returns array directly, extract product IDs
+        const wishlistItems = Array.isArray(json) ? json : (json.items || []);
+        const productIds = wishlistItems.map((item: any) => item.productId || item._id);
         setWishlistItems(productIds);
       }
     } catch (e) {
@@ -102,6 +107,15 @@ export default function HomeScreen() {
     fetchProducts();
     fetchWishlist();
   }, [accessToken]);
+
+  // Refresh wishlist when screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchWishlist();
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const onRefresh = () => {
     fetchProducts(true);
@@ -115,10 +129,13 @@ export default function HomeScreen() {
       return;
     }
 
+    if (wishlistLoading === productId) return; // Prevent multiple clicks
+
     const isInWishlist = wishlistItems.includes(productId);
+    setWishlistLoading(productId);
     
     try {
-      const res = await fetch(`${API_URL}/api/profile/wishlist${isInWishlist ? `/${productId}` : ''}`, {
+      const res = await fetch(`${API_URL}/api/profile/wishlist${isInWishlist ? `/${productId}` : `/${productId}`}`, {
         method: isInWishlist ? 'DELETE' : 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,6 +144,12 @@ export default function HomeScreen() {
         body: isInWishlist ? undefined : JSON.stringify({ productId }),
       });
       
+      if (res.status === 401) {
+        await logout();
+        (navigation as any).navigate('Tài khoản');
+        return;
+      }
+      
       if (res.ok) {
         if (isInWishlist) {
           setWishlistItems(prev => prev.filter(id => id !== productId));
@@ -134,10 +157,14 @@ export default function HomeScreen() {
           setWishlistItems(prev => [...prev, productId]);
         }
       } else {
-        Alert.alert('Lỗi', 'Không thể cập nhật danh sách yêu thích');
+        const errorText = isInWishlist ? 'Không thể xóa sản phẩm khỏi danh sách yêu thích' : 'Không thể thêm sản phẩm vào danh sách yêu thích';
+        Alert.alert('Lỗi', errorText);
       }
     } catch (e) {
-      Alert.alert('Lỗi', 'Không thể cập nhật danh sách yêu thích');
+      const errorText = isInWishlist ? 'Không thể xóa sản phẩm khỏi danh sách yêu thích' : 'Không thể thêm sản phẩm vào danh sách yêu thích';
+      Alert.alert('Lỗi', errorText);
+    } finally {
+      setWishlistLoading(null);
     }
   };
 
@@ -456,12 +483,18 @@ export default function HomeScreen() {
               <TouchableOpacity 
                 style={styles.favoriteButton}
                 onPress={() => toggleWishlist(product._id || product.id)}
+                disabled={wishlistLoading === (product._id || product.id)}
               >
                 <Ionicons 
                   name={wishlistItems.includes(product._id || product.id) ? "heart" : "heart-outline"} 
                   size={20} 
                   color={wishlistItems.includes(product._id || product.id) ? "#FF6B35" : "#999"} 
                 />
+                {wishlistLoading === (product._id || product.id) && (
+                  <View style={styles.loadingOverlay}>
+                    <Ionicons name="refresh" size={12} color="#FF6B35" />
+                  </View>
+                )}
               </TouchableOpacity>
             </TouchableOpacity>
           ))}
@@ -728,5 +761,21 @@ const styles = StyleSheet.create({
   },
   compactIcon: {
     marginLeft: 8,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
 });

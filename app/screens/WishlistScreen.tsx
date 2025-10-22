@@ -91,39 +91,27 @@ export default function WishlistScreen() {
       }
       
       const wishlistJson = await wishlistRes.json();
-      const wishlistItems = wishlistJson.items || [];
+      console.log('Wishlist API Response:', wishlistJson); // Debug log
+      
+      // API returns array directly, not wrapped in items property
+      const wishlistItems = Array.isArray(wishlistJson) ? wishlistJson : (wishlistJson.items || []);
       
       if (wishlistItems.length === 0) {
         setWishlistProducts([]);
         return;
       }
       
-      // Get product IDs from wishlist
-      const productIds = wishlistItems.map((item: any) => item.productId);
-      
-      // Fetch all products to get full product details
-      const productsRes = await fetch(`${API_URL}/api/products`);
-      if (!productsRes.ok) {
-        setErrorText('Không tải được thông tin sản phẩm');
-        return;
-      }
-      
-      const productsJson = await productsRes.json();
-      const allProducts = Array.isArray(productsJson) ? productsJson : (productsJson.products ?? []);
-      
-      // Match wishlist items with product details
-      const wishlistWithProducts = wishlistItems.map((wishlistItem: any) => {
-        const product = allProducts.find((p: any) => p._id === wishlistItem.productId);
-        return {
-          ...wishlistItem,
-          product: product || {
-            _id: wishlistItem.productId,
-            title: 'Sản phẩm không tìm thấy',
-            price: 0,
-            isAvailable: false
-          }
-        };
-      });
+      // Since API returns products directly, we don't need to fetch products separately
+      const wishlistWithProducts = wishlistItems.map((product: any) => ({
+        _id: `wishlist_${product._id}`,
+        userId: 'current_user', // This would come from auth context
+        productId: product._id,
+        addedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        __v: 0,
+        product: product
+      }));
       
       setWishlistProducts(wishlistWithProducts);
     } catch (e) {
@@ -426,16 +414,6 @@ export default function WishlistScreen() {
           )}
         </View>
         <View style={styles.productFooter}>
-          <Text style={styles.productLocation}>
-            {(() => {
-              const sellerAddr = item.product?.seller?.address;
-              if (sellerAddr?.province) return sellerAddr.province;
-              const loc: any = item.product?.location;
-              if (loc?.province) return loc.province;
-              if (loc?.city) return loc.city;
-              return loc || 'Không xác định';
-            })()}
-          </Text>
           <Text style={styles.dateAdded}>{formatDate(item.addedAt)}</Text>
         </View>
       </View>
