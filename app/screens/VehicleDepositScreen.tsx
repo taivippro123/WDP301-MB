@@ -16,8 +16,6 @@ import {
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
 
-const DEPOSIT_AMOUNT = 500000; // 500k VND
-
 export default function VehicleDepositScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -29,6 +27,8 @@ export default function VehicleDepositScreen() {
   const [buyerAddress, setBuyerAddress] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [depositAmount, setDepositAmount] = useState<number>(500000); // Default fallback
+  const [isLoadingDepositAmount, setIsLoadingDepositAmount] = useState(true);
 
   useEffect(() => {
     // Pre-fill buyer info from user profile
@@ -40,7 +40,28 @@ export default function VehicleDepositScreen() {
       fetchProfile();
     }
     fetchWalletBalance();
+    fetchDepositAmount();
   }, []);
+
+  const fetchDepositAmount = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/deposit-amount`, {
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && json?.data?.amount) {
+          setDepositAmount(json.data.amount);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching deposit amount:', e);
+    } finally {
+      setIsLoadingDepositAmount(false);
+    }
+  };
 
   const fetchProfile = async () => {
     try {
@@ -112,10 +133,10 @@ export default function VehicleDepositScreen() {
       }
 
       // Check wallet balance
-      if (walletBalance < DEPOSIT_AMOUNT) {
+      if (walletBalance < depositAmount) {
         Alert.alert(
           'Số dư không đủ',
-          `Số dư ví: ${formatPrice(walletBalance)}\nCần: ${formatPrice(DEPOSIT_AMOUNT)}\n\nVui lòng nạp thêm tiền vào ví.`,
+          `Số dư ví: ${formatPrice(walletBalance)}\nCần: ${formatPrice(depositAmount)}\n\nVui lòng nạp thêm tiền vào ví.`,
           [
             { text: 'Đóng', style: 'cancel' },
             { text: 'Nạp tiền', onPress: () => (navigation as any).navigate('Wallet') }
@@ -151,7 +172,7 @@ export default function VehicleDepositScreen() {
 
       Alert.alert(
         'Đặt cọc thành công!',
-        `Đã thanh toán ${formatPrice(DEPOSIT_AMOUNT)} từ ví.\n\n${json.data?.note || 'Admin sẽ liên hệ để xác nhận giao dịch.'}`,
+        `Đã thanh toán ${formatPrice(depositAmount)} từ ví.\n\n${json.data?.note || 'Admin sẽ liên hệ để xác nhận giao dịch.'}`,
         [
           {
             text: 'OK',
@@ -217,18 +238,22 @@ export default function VehicleDepositScreen() {
           <View style={styles.infoBox}>
             <Ionicons name="information-circle" size={20} color="#3498db" />
             <Text style={styles.infoText}>
-              Đặt cọc {formatPrice(DEPOSIT_AMOUNT)} để giữ xe. Admin sẽ liên hệ sắp xếp thời gian gặp mặt và hoàn tất giao dịch.
+              Đặt cọc {formatPrice(depositAmount)} để giữ xe. Admin sẽ liên hệ sắp xếp thời gian gặp mặt và hoàn tất giao dịch.
             </Text>
           </View>
           
           <View style={styles.depositRow}>
             <Text style={styles.depositLabel}>Số tiền đặt cọc:</Text>
-            <Text style={styles.depositAmount}>{formatPrice(DEPOSIT_AMOUNT)}</Text>
+            {isLoadingDepositAmount ? (
+              <ActivityIndicator size="small" color="#3498db" />
+            ) : (
+              <Text style={styles.depositAmount}>{formatPrice(depositAmount)}</Text>
+            )}
           </View>
           
           <View style={styles.depositRow}>
             <Text style={styles.depositLabel}>Số dư ví hiện tại:</Text>
-            <Text style={[styles.depositAmount, walletBalance < DEPOSIT_AMOUNT && styles.insufficientBalance]}>
+            <Text style={[styles.depositAmount, walletBalance < depositAmount && styles.insufficientBalance]}>
               {formatPrice(walletBalance)}
             </Text>
           </View>
@@ -290,12 +315,16 @@ export default function VehicleDepositScreen() {
       <View style={styles.bottomActions}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Tổng thanh toán:</Text>
-          <Text style={styles.totalAmount}>{formatPrice(DEPOSIT_AMOUNT)}</Text>
+          {isLoadingDepositAmount ? (
+            <ActivityIndicator size="small" color="#e74c3c" />
+          ) : (
+            <Text style={styles.totalAmount}>{formatPrice(depositAmount)}</Text>
+          )}
         </View>
         <TouchableOpacity
-          style={[styles.depositButton, isLoading && styles.depositButtonDisabled]}
+          style={[styles.depositButton, (isLoading || isLoadingDepositAmount) && styles.depositButtonDisabled]}
           onPress={handleDeposit}
-          disabled={isLoading}
+          disabled={isLoading || isLoadingDepositAmount}
         >
           {isLoading ? (
             <ActivityIndicator size="small" color="#fff" />
