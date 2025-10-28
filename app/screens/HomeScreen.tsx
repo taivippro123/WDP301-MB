@@ -56,7 +56,7 @@ export default function HomeScreen() {
     }
     setErrorText(null);
     try {
-      const url = `${API_URL}/api/products?status=active`;
+      const url = `${API_URL}/api/products?status=active&sort=priority`;
       const res = await fetch(url);
       if (res.status === 401) {
         await logout();

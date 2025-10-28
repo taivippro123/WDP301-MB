@@ -602,11 +602,6 @@ export default function ManageListingsScreen() {
       <Text style={styles.emptySubtitle}>
         Bạn hiện tại không có tin đăng nào cho trạng thái này
       </Text>
-      {activeTab === 0 && (
-        <TouchableOpacity style={styles.postButton}>
-          <Text style={styles.postButtonText}>Đăng tin</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 
