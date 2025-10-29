@@ -76,7 +76,7 @@ export default function ContractScreen() {
     return [a.houseNumber, a.ward, a.district, a.province].filter(Boolean).join(', ');
   }
 
-  function buildPrettyHtml(overrideSig?: string | null) {
+  function buildPrettyHtml(overrideSig?: string | null, sellerSigOverride?: string | null) {
     const p = placeholdersRef.current || {} as any;
     const today = new Date();
     const dd = String(today.getDate()).padStart(2, '0');
@@ -104,7 +104,8 @@ export default function ContractScreen() {
     const deliveryDate = (() => { const d = new Date(); d.setDate(d.getDate()+3); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })();
     const sig = (overrideSig !== undefined ? overrideSig : signatureDataUrl) || null;
     const signImg = sig ? `<img src="${sig}" style="height:80px;" />` : '<div style="height:80px"></div>';
-    const sellerSignImg = sellerSignature ? `<img src="${sellerSignature}" style="height:80px;" />` : '<div class="small muted" style="height:80px; display:flex; align-items:center; justify-content:center;">Chưa ký</div>';
+    const sellerSig = (sellerSigOverride !== undefined ? sellerSigOverride : sellerSignature) || null;
+    const sellerSignImg = sellerSig ? `<img src="${sellerSig}" style="height:80px;" />` : '<div class="small muted" style="height:80px; display:flex; align-items:center; justify-content:center;">Chưa ký</div>';
 
     return `<!DOCTYPE html>
 <html lang="vi">
@@ -146,7 +147,7 @@ export default function ContractScreen() {
   <div class="section">
     <div class="title">BÊN BÁN (Bên A):</div>
     <ul>
-      <li>Họ và tên/Tên doanh nghiệp: ${sellerName} <span class="signed">(đã ký)</span></li>
+      <li>Họ và tên/Tên doanh nghiệp: ${sellerName}</li>
       <li>CMND/CCCD/MST: …………………………………</li>
       <li>Địa chỉ: ${sellerAddress || '…'}</li>
       <li>Điện thoại: ${sellerPhone || '…'}</li>
@@ -320,7 +321,23 @@ export default function ContractScreen() {
     try {
       if (!contractId) {
         Alert.alert('Lỗi', 'Thiếu contractId');
-        return;
+        return false;
+      }
+      // Ensure seller signature is available before generating final PDF
+      let localSellerSig: string | null = sellerSignature;
+      if (!localSellerSig) {
+        try {
+          const rt = await fetch(`${API_URL}/api/products/${productId}/contract-template`);
+          const td = await rt.json();
+          if (rt.ok && td?.data?.contractTemplate?.sellerSignature) {
+            localSellerSig = td.data.contractTemplate.sellerSignature;
+            try { setSellerSignature(localSellerSig); } catch {}
+          }
+        } catch {}
+      }
+      if (!localSellerSig) {
+        Alert.alert('Thiếu chữ ký người bán', 'Vui lòng đợi tải chữ ký người bán hoặc thử lại.');
+        return false;
       }
       setIsUploading(true);
       let sigForPrint: string | null = signatureDataUrl;
@@ -333,7 +350,7 @@ export default function ContractScreen() {
         });
       }
       // Generate PDF from HTML using the freshest signature (override)
-      const htmlToPrint = buildPrettyHtml(sigForPrint);
+      const htmlToPrint = buildPrettyHtml(sigForPrint, localSellerSig);
       const { uri } = await Print.printToFileAsync({ html: htmlToPrint });
 
       // Upload to Cloudinary unsigned preset (public, previewable)
@@ -546,8 +563,8 @@ export default function ContractScreen() {
                 >
                   <Text style={{ color: '#000', fontWeight: '700' }}>Xóa chữ ký</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleConfirm} disabled={isUploading} style={{ flex: 1, backgroundColor: '#FFD700', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginLeft: 8 }}>
-                  {isUploading ? <ActivityIndicator color="#000" /> : <Text style={{ color: '#000', fontWeight: '700' }}>Ký và đặt hàng</Text>}
+                <TouchableOpacity onPress={handleConfirm} disabled={isUploading || !sellerSignature} style={{ flex: 1, backgroundColor: '#FFD700', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginLeft: 8, opacity: (isUploading || !sellerSignature) ? 0.6 : 1 }}>
+                  {isUploading ? <ActivityIndicator color="#000" /> : <Text style={{ color: '#000', fontWeight: '700' }}>{!sellerSignature ? 'Đang tải chữ ký...' : 'Ký và đặt hàng'}</Text>}
                 </TouchableOpacity>
               </View>
             </View>

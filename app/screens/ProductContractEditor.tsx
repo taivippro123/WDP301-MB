@@ -118,10 +118,6 @@ ${listItems}
         Alert.alert('Chưa thể lưu', 'Vui lòng tạo sản phẩm trước, rồi vào màn hình chỉnh hợp đồng để lưu.');
         return;
       }
-      if (!customTermsText.trim()) {
-        Alert.alert('Lỗi', 'Vui lòng nhập ít nhất một điều khoản');
-        return;
-      }
       // Ensure we have the freshest signature: if missing, try to read from pad
       let sigForSave: string | null = sellerSignature;
       if (!sigForSave && signatureRef?.current?.readSignature) {
@@ -141,7 +137,7 @@ ${listItems}
       setIsUploading(true);
 
       // Generate PDF from preview
-      const { uri } = await Print.printToFileAsync({ html: previewHtml });
+      const { uri } = await Print.printToFileAsync({ html: previewHtml || '<html><body></body></html>' });
 
       // Upload to Cloudinary
       const formCloud = new FormData();

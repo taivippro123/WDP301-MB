@@ -8,6 +8,7 @@ import {
   Modal,
   SafeAreaView,
   ScrollView,
+  ActivityIndicator,
   StyleSheet,
   Text,
   TextInput,
@@ -35,6 +36,65 @@ export default function ManageListingsScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [contractPdfUrl, setContractPdfUrl] = useState<string | null>(null);
+  const [contractLoading, setContractLoading] = useState(false);
+  // Lazy WebView loader like OrderDetailScreen
+  const WebViewComponent = React.useMemo(() => {
+    try {
+      const { WebView } = require('react-native-webview');
+      return WebView as React.ComponentType<any>;
+    } catch {
+      return null as any;
+    }
+  }, []);
+  const handleOpenContractFromItem = async (item: any) => {
+    try {
+      const directPdf = (item as any)?.contract?.pdfUrl as string | undefined;
+      const pid = item?._id || item?.id;
+      try {
+        console.log('[ManageListings] open contract click', { pid, hasDirectPdf: !!directPdf });
+      } catch {}
+
+      // Show modal + spinner early for better UX
+      if (WebViewComponent) {
+        setContractPdfUrl(null);
+        setContractLoading(true);
+        setShowContractModal(true);
+      }
+
+      let pdf = directPdf;
+      if (!pdf && pid) {
+        try {
+          const url = `${API_URL}/api/products/${pid}/final-contract`;
+          try { console.log('[ManageListings] requesting final-contract', url); } catch {}
+          const res = await fetch(url, { headers: authHeaders() });
+          const text = await res.text();
+          let data: any = {};
+          try { data = text ? JSON.parse(text) : {}; } catch {}
+          try { console.log('[ManageListings] final-contract response', { status: res.status, ok: res.ok, data }); } catch {}
+          if (res.ok && data?.data?.pdfUrl) {
+            pdf = String(data.data.pdfUrl);
+          }
+        } catch {}
+      }
+
+      if (!pdf) {
+        try { console.log('[ManageListings] no pdf after fetch'); } catch {}
+        setShowContractModal(false);
+        Alert.alert('Không có hợp đồng', 'Chưa có đường dẫn hợp đồng để xem.');
+        return;
+      }
+
+      setContractPdfUrl(pdf);
+      try { console.log('[ManageListings] open pdf url', pdf); } catch {}
+      if (!WebViewComponent) {
+        try { (require('react-native').Linking as any).openURL(pdf); } catch {}
+      }
+    } finally {
+      // Keep spinner until WebView onLoadEnd clears it
+    }
+  };
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [editForm, setEditForm] = useState({
     title: '',
@@ -69,21 +129,17 @@ export default function ManageListingsScreen() {
 
   const [productsByStatus, setProductsByStatus] = useState<Record<string, any[]>>({
     active: [],
-    expired: [],
     rejected: [],
-    draft: [],
     pending: [],
-    hidden: [],
+    sold: [],
   });
 
   // Tabs configuration
   const tabs = [
     { id: 0, title: "ĐANG HIỂN THỊ", key: "active" },
-    { id: 1, title: "HẾT HẠN", key: "expired" },
-    { id: 2, title: "BỊ TỪ CHỐI", key: "rejected" },
-    { id: 3, title: "TIN NHÁP", key: "draft" },
-    { id: 4, title: "CHỜ DUYỆT", key: "pending" },
-    { id: 5, title: "ĐÃ ẨN", key: "hidden" },
+    { id: 1, title: "BỊ TỪ CHỐI", key: "rejected" },
+    { id: 2, title: "CHỜ DUYỆT", key: "pending" },
+    { id: 3, title: "ĐÃ BÁN", key: "sold" },
   ];
 
   const tabLayouts = useRef<{ x: number; width: number; textWidth: number }[]>(
@@ -161,13 +217,13 @@ export default function ManageListingsScreen() {
         throw new Error(data?.message || data?.error || 'Không thể tải danh sách tin đăng');
       }
       const items: any[] = Array.isArray(data?.products) ? data.products : [];
-      const grouped: Record<string, any[]> = { active: [], expired: [], rejected: [], draft: [], pending: [], hidden: [] };
+      const grouped: Record<string, any[]> = { active: [], rejected: [], pending: [], sold: [] };
       items.forEach((p) => {
         const status = p?.status as string;
-        if (status && grouped[status as keyof typeof grouped]) {
+        if (status && (status === 'active' || status === 'rejected' || status === 'pending' || status === 'sold')) {
           grouped[status].push(p);
-        } else {
-          grouped.active.push(p); // default bucket
+        } else if (status === 'active' || !status) {
+          grouped.active.push(p);
         }
       });
       setProductsByStatus(grouped);
@@ -668,6 +724,17 @@ export default function ManageListingsScreen() {
             </View>
           </View>
 
+          {item.status === 'rejected' && (
+            <View style={{ marginBottom: 8 }}>
+              {!!item.rejectedAt && (
+                <Text style={[styles.dateText, { color: '#FF6B6B' }]}>Bị từ chối lúc: {new Date(item.rejectedAt).toLocaleString('vi-VN')}</Text>
+              )}
+              {!!item.rejectionReason && (
+                <Text style={[styles.dateText, { color: '#FF6B6B' }]}>Lý do: {item.rejectionReason}</Text>
+              )}
+            </View>
+          )}
+
           <View style={styles.listingDates}>
             <Text style={styles.dateText}>{item.postedDate || new Date(item.createdAt).toLocaleDateString('vi-VN')}</Text>
             <Text
@@ -676,25 +743,37 @@ export default function ManageListingsScreen() {
                 item.status === "expired" && styles.expiredText,
               ]}
             >
-              {item.expiryDate || (item.status === 'expired' ? 'Đã hết hạn' : 'Đang hiển thị')}
+              {item.status === 'active' ? 'Đang hiển thị' : item.status === 'pending' ? 'Chờ duyệt' : item.status === 'rejected' ? 'Bị từ chối' : item.status === 'sold' ? 'Đã bán' : ''}
             </Text>
           </View>
         </View>
       </TouchableOpacity>
 
       <View style={styles.listingActions}>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleEditProduct(item)}
-        >
-          <Ionicons name="create-outline" size={20} color="#4CAF50" />
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleDeleteProduct(item)}
-        >
-          <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
-        </TouchableOpacity>
+        {item.status !== 'sold' && (
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleEditProduct(item)}
+          >
+            <Ionicons name="create-outline" size={20} color="#4CAF50" />
+          </TouchableOpacity>
+        )}
+        {item.status !== 'sold' && (
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleDeleteProduct(item)}
+          >
+            <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+          </TouchableOpacity>
+        )}
+        {item.status === 'sold' && (
+          <TouchableOpacity
+            style={[styles.actionButton, { paddingHorizontal: 10 }]}
+            onPress={() => handleOpenContractFromItem(item)}
+          >
+            <Text style={{ color: '#1E88E5', fontWeight: '600', fontSize: 12 }}>Xem hợp đồng</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -764,7 +843,7 @@ export default function ManageListingsScreen() {
         shouldCancelWhenOutside={true}
       >
         <Animated.View style={[styles.content, contentAnimatedStyle]}>
-          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 96 }}>
             {isLoading ? (
               <View style={styles.emptyContainer}>
                 <Ionicons name="reload" size={24} color="#999" />
@@ -1169,6 +1248,48 @@ export default function ManageListingsScreen() {
               />
             </View>
           </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Contract Viewer Modal (for sold listings) */}
+      <Modal visible={showContractModal} animationType="slide" onRequestClose={() => setShowContractModal(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+            <TouchableOpacity onPress={() => setShowContractModal(false)} style={{ padding: 8 }}>
+              <Text>Đóng</Text>
+            </TouchableOpacity>
+            <Text style={{ flex: 1, textAlign: 'center', fontWeight: '700', color: '#000' }}>Hợp đồng</Text>
+            <View style={{ width: 48 }} />
+          </View>
+          <View style={{ flex: 1 }}>
+            {WebViewComponent ? (
+              contractPdfUrl ? (
+                <View style={{ flex: 1 }}>
+                  {contractLoading && (
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                      <ActivityIndicator />
+                    </View>
+                  )}
+                  <WebViewComponent
+                    source={{ uri: contractPdfUrl }}
+                    onLoadEnd={() => setContractLoading(false)}
+                    startInLoadingState
+                    style={{ flex: 1 }}
+                    originWhitelist={["*"]}
+                    allowsBackForwardNavigationGestures
+                  />
+                </View>
+              ) : (
+                <View style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
+                  <Text style={{ color: '#000' }}>Không có hợp đồng để hiển thị</Text>
+                </View>
+              )
+            ) : (
+              <View style={{ flex:1, alignItems:'center', justifyContent:'center', padding:16 }}>
+                <Text style={{ color: '#000', textAlign: 'center' }}>Không thể mở trong ứng dụng. Vui lòng mở hợp đồng trong trình duyệt.</Text>
+              </View>
+            )}
+          </View>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
