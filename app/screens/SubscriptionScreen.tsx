@@ -3,6 +3,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -54,11 +55,12 @@ interface SubscriptionData {
 
 export default function SubscriptionScreen() {
   const navigation = useNavigation();
-  const { accessToken } = useAuth();
+  const { accessToken, logout } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [isPurchasing, setIsPurchasing] = useState(false);
 
   const fetchSubscription = async (isRefresh = false) => {
     if (isRefresh) {
@@ -125,6 +127,70 @@ export default function SubscriptionScreen() {
 
   const onRefresh = () => {
     fetchSubscription(true);
+  };
+
+  const handlePurchase = () => {
+    const planId = '68f6358694b8406c57d9212f';
+    const price = 299000;
+
+    Alert.alert(
+      'Xác nhận nâng cấp',
+      `Bạn sẽ bị trừ ${formatPrice(price)} xu để nâng cấp gói PRO trong vòng 1 tháng.`,
+      [
+        {
+          text: 'Hủy',
+          style: 'cancel',
+        },
+        {
+          text: 'Chấp nhận',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setIsPurchasing(true);
+
+              const response = await fetch(`${API_URL}/api/subscriptions/purchase`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({ planId }),
+              });
+
+              const responseData = await response.json();
+
+              if (!response.ok) {
+                if (response.status === 401) {
+                  await logout();
+                  return;
+                }
+                
+                // Check for insufficient wallet balance error
+                const errorMsg = responseData?.error || responseData?.message || '';
+                const errorMsgLower = errorMsg.toLowerCase();
+                
+                if (errorMsgLower.includes('insufficient wallet balance') || 
+                    errorMsgLower.includes('insufficient') && errorMsgLower.includes('wallet')) {
+                  Alert.alert('Lỗi', 'Không đủ xu để thanh toán, vui lòng nạp thêm');
+                } else {
+                  Alert.alert('Lỗi', errorMsg || 'Không thể nâng cấp gói đăng ký');
+                }
+                return;
+              }
+
+              // Success - refresh subscription data
+              Alert.alert('Thành công', 'Gói đăng ký đã được nâng cấp thành công!');
+              await fetchSubscription();
+            } catch (error: any) {
+              console.error('Purchase error:', error);
+              Alert.alert('Lỗi', error?.message || 'Có lỗi xảy ra khi nâng cấp gói. Vui lòng thử lại sau.');
+            } finally {
+              setIsPurchasing(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -477,9 +543,19 @@ export default function SubscriptionScreen() {
 
         {/* Upgrade Button */}
         {subscription.planKey === 'free' && (
-          <TouchableOpacity style={styles.upgradeButton}>
-            <Ionicons name="rocket" size={24} color="#000" />
-            <Text style={styles.upgradeButtonText}>Nâng cấp gói đăng ký</Text>
+          <TouchableOpacity 
+            style={[styles.upgradeButton, isPurchasing && styles.upgradeButtonDisabled]} 
+            onPress={handlePurchase}
+            disabled={isPurchasing}
+          >
+            {isPurchasing ? (
+              <ActivityIndicator size="small" color="#000" />
+            ) : (
+              <Ionicons name="rocket" size={24} color="#000" />
+            )}
+            <Text style={styles.upgradeButtonText}>
+              {isPurchasing ? 'Đang xử lý...' : 'Nâng cấp gói đăng ký'}
+            </Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -805,6 +881,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  upgradeButtonDisabled: {
+    opacity: 0.6,
   },
   upgradeButtonText: {
     fontSize: 16,
