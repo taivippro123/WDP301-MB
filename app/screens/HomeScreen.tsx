@@ -22,7 +22,6 @@ export default function HomeScreen() {
   const { logout, accessToken } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [activeTab, setActiveTab] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -167,8 +166,6 @@ export default function HomeScreen() {
       setWishlistLoading(null);
     }
   };
-
-  const tabs = ['Dành cho bạn', 'Gần bạn', 'Mới nhất'];
 
   // Chiều cao header khi đầy đủ
   const HEADER_MAX_HEIGHT = 220;
@@ -402,21 +399,6 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabsContainer}>
-          {tabs.map((tab, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={[styles.tab, activeTab === index && styles.activeTab]}
-              onPress={() => setActiveTab(index)}
-            >
-              <Text style={[styles.tabText, activeTab === index && styles.activeTabText]}>
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         {/* Products Grid */}
         <View style={styles.productsContainer}>
           {isLoading && (
@@ -425,12 +407,22 @@ export default function HomeScreen() {
           {errorText && !isLoading && (
             <Text style={{ padding: 16, color: '#d00' }}>{errorText}</Text>
           )}
-          {!isLoading && !errorText && products.map((product) => (
+          {!isLoading && !errorText && products.map((product) => {
+            // Kiểm tra priority: chỉ làm nổi bật sản phẩm có priorityLevel === "high"
+            const isPriority = product.priorityLevel === 'high';
+            
+            return (
             <TouchableOpacity 
               key={product._id || product.id} 
-              style={styles.productItem}
+              style={[styles.productItem, isPriority && styles.priorityProductItem]}
               onPress={() => (navigation as any).navigate('ProductDetail', { productId: product._id || product.id })}
             >
+              {isPriority && (
+                <View style={styles.priorityBadge}>
+                  <Ionicons name="flash" size={12} color="#fff" />
+                  <Text style={styles.priorityBadgeText}>PRO</Text>
+                </View>
+              )}
               <View style={styles.productImage}>
                 {(() => {
                   const url = getFirstMediaUrl(product);
@@ -497,7 +489,8 @@ export default function HomeScreen() {
                 )}
               </TouchableOpacity>
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
        </Animated.ScrollView>
       </View>
@@ -619,32 +612,6 @@ const styles = StyleSheet.create({
     color: '#333',
     lineHeight: 16,
   },
-  tabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginTop: 8,
-    justifyContent: 'center',
-  },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    marginHorizontal: 10,
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#FFD700',
-  },
-  tabText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  activeTabText: {
-    color: '#000',
-    fontWeight: 'bold',
-  },
   productsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -666,6 +633,46 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 3,
     minHeight: 280,
+    position: 'relative',
+  },
+  priorityProductItem: {
+    borderWidth: 3,
+    borderColor: '#FFD700',
+    backgroundColor: '#FFF8DC',
+    shadowColor: '#FFD700',
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  priorityBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#FF6B35',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  priorityBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 4,
   },
   productImage: {
     width: '100%',

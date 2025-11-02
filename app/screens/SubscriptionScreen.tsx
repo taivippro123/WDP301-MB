@@ -511,7 +511,7 @@ export default function SubscriptionScreen() {
                 size={24} 
                 color={subscription.planId.features.aiAssist ? "#4CAF50" : "#F44336"} 
               />
-              <Text style={styles.featureText}>AI Hỗ trợ viết tin</Text>
+              <Text style={styles.featureText}>Nổi bật tin đăng với khung viền PRO</Text>
             </View>
 
             <View style={styles.featureItem}>
@@ -523,14 +523,6 @@ export default function SubscriptionScreen() {
               <Text style={styles.featureText}>Ưu tiên hiển thị</Text>
             </View>
 
-            <View style={styles.featureItem}>
-              <Ionicons 
-                name={subscription.planId.features.manualReviewBypass ? "checkmark-circle" : "close-circle"} 
-                size={24} 
-                color={subscription.planId.features.manualReviewBypass ? "#4CAF50" : "#F44336"} 
-              />
-              <Text style={styles.featureText}>Bỏ qua duyệt thủ công</Text>
-            </View>
 
             <View style={styles.featureItem}>
               <Ionicons name="headset" size={24} color="#666" />
