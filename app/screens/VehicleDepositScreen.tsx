@@ -5,13 +5,13 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  SafeAreaView,
 } from 'react-native';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
@@ -52,8 +52,8 @@ export default function VehicleDepositScreen() {
       });
       if (res.ok) {
         const json = await res.json();
-        if (json?.success && json?.data?.amount) {
-          setDepositAmount(json.data.amount);
+        if (json?.success && json?.depositAmounts && Array.isArray(json.depositAmounts) && json.depositAmounts.length > 0) {
+          setDepositAmount(json.depositAmounts[0]);
         }
       }
     } catch (e) {
