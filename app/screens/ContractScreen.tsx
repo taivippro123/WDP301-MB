@@ -1,10 +1,9 @@
-import React from 'react';
-import { Alert, SafeAreaView, View, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import { WebView } from 'react-native-webview';
-import Signature from 'react-native-signature-canvas';
-import * as Print from 'expo-print';
-import * as FileSystem from 'expo-file-system';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import React from 'react';
+import { ActivityIndicator, Alert, SafeAreaView, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import Signature from 'react-native-signature-canvas';
+import { WebView } from 'react-native-webview';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
 
@@ -385,6 +384,23 @@ export default function ContractScreen() {
     }
   }, [signatureDataUrl, contractId, accessToken, navigation]);
 
+  const sanitizeForJson = React.useCallback((value: any): any => {
+    if (value === null) return null;
+    const t = typeof value;
+    if (t === 'string' || t === 'number' || t === 'boolean') return value;
+    if (value instanceof Date) return value.toISOString();
+    if (Array.isArray(value)) return value.map((item) => sanitizeForJson(item)).filter((item) => item !== undefined);
+    if (t === 'object') {
+      const plain: any = {};
+      Object.keys(value).forEach((key) => {
+        const sanitized = sanitizeForJson((value as any)[key]);
+        if (sanitized !== undefined) plain[key] = sanitized;
+      });
+      return plain;
+    }
+    return undefined;
+  }, []);
+
   const placeOrderAfterSigned = React.useCallback(async () => {
     const body: any = {
       to_name: receiver?.name?.trim() || '',
@@ -421,13 +437,17 @@ export default function ContractScreen() {
         },
       ],
     };
+    const sanitizedBody = sanitizeForJson(body);
+    const payload = JSON.stringify(sanitizedBody);
+    console.log('[ContractScreen] Creating shipping order with body:', sanitizedBody);
+    console.log('[ContractScreen] Shipping order payload string:', payload);
     const res = await fetch(`${API_URL}/api/shipping/order`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: JSON.stringify(body),
+      body: payload,
     });
     const raw = await res.text();
     let data: any = {};
@@ -437,7 +457,7 @@ export default function ContractScreen() {
       throw new Error(msg);
     }
     return data;
-  }, [receiver, product, productId, sellerId, unitPrice, shippingFee, accessToken]);
+  }, [receiver, product, productId, sellerId, unitPrice, shippingFee, accessToken, sanitizeForJson]);
 
   const handleConfirm = React.useCallback(async () => {
     const ok = await signAndUpload();

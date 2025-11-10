@@ -1,6 +1,6 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, Linking, ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
@@ -337,8 +337,10 @@ export default function OrderDetailScreen() {
             ) : (
               <>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Tổng tiền</Text>
-                  <Text style={[styles.infoValue, styles.priceText]}>{formatCurrency(order.finalAmount)}</Text>
+                  <Text style={styles.infoLabel}>Tổng tiền hàng</Text>
+                  <Text style={[styles.infoValue, styles.priceText]}>
+                    {formatCurrency(Math.max((order.finalAmount ?? 0) - (order.shippingFee ?? 0), 0))}
+                  </Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Phí vận chuyển</Text>

@@ -2,17 +2,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Alert,
-    Image,
-    Keyboard,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View
+  Alert,
+  Animated,
+  Image,
+  Keyboard,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
@@ -22,6 +22,9 @@ export default function HomeScreen() {
   const { logout, accessToken } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [filterCategory, setFilterCategory] = useState<'' | 'vehicle' | 'battery'>('');
+  const [minPriceInput, setMinPriceInput] = useState<string>('');
+  const [maxPriceInput, setMaxPriceInput] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -47,7 +50,34 @@ export default function HomeScreen() {
     { id: 10, name: 'Bảo hiểm\nxe điện', icon: 'shield-checkmark-outline' },
   ];
 
-  const fetchProducts = async (isRefresh = false) => {
+  const onlyDigits = (s: string) => (s || '').replace(/\D/g, '');
+  const parsePrice = (s: string): number | undefined => {
+    const d = onlyDigits(s);
+    if (!d) return undefined;
+    const n = Number(d);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const formatVndInput = (s: string) => {
+    const d = onlyDigits(s);
+    if (!d) return '';
+    try { return Number(d).toLocaleString('vi-VN'); } catch { return d; }
+  };
+  const handleMinPriceChange = (t: string) => setMinPriceInput(formatVndInput(t));
+  const handleMaxPriceChange = (t: string) => setMaxPriceInput(formatVndInput(t));
+
+  const fetchProducts = async (options?: {
+    isRefresh?: boolean;
+    query?: string;
+    category?: '' | 'vehicle' | 'battery';
+    minPriceInputOverride?: string;
+    maxPriceInputOverride?: string;
+  }) => {
+    const isRefresh = options?.isRefresh ?? false;
+    const queryOverride = options?.query;
+    const categoryOverride = options?.category;
+    const minPriceInputOverride = options?.minPriceInputOverride;
+    const maxPriceInputOverride = options?.maxPriceInputOverride;
+
     if (isRefresh) {
       setIsRefreshing(true);
     } else {
@@ -55,7 +85,20 @@ export default function HomeScreen() {
     }
     setErrorText(null);
     try {
-      const url = `${API_URL}/api/products?status=active&sort=priority`;
+      const params = new URLSearchParams();
+      params.set('status', 'active');
+      params.set('sort', 'priority');
+      const q = ((queryOverride !== undefined ? queryOverride : searchText) || '').trim();
+      const categoryValue = categoryOverride !== undefined ? categoryOverride : filterCategory;
+      const minInputValue = minPriceInputOverride !== undefined ? minPriceInputOverride : minPriceInput;
+      const maxInputValue = maxPriceInputOverride !== undefined ? maxPriceInputOverride : maxPriceInput;
+      if (q) params.set('q', q);
+      if (categoryValue) params.set('category', categoryValue);
+      const minPriceParam = parsePrice(minInputValue);
+      const maxPriceParam = parsePrice(maxInputValue);
+      if (typeof minPriceParam === 'number') params.set('min_price', String(minPriceParam));
+      if (typeof maxPriceParam === 'number') params.set('max_price', String(maxPriceParam));
+      const url = `${API_URL}/api/products?${params.toString()}`;
       const res = await fetch(url);
       if (res.status === 401) {
         await logout();
@@ -64,7 +107,42 @@ export default function HomeScreen() {
       }
       const json = await res.json();
       const list = Array.isArray(json) ? json : (json.products ?? []);
-      setProducts(list);
+      const qLower = q.toLowerCase();
+      const minPriceFilter = minPriceParam;
+      const maxPriceFilter = maxPriceParam;
+      const getNumericPrice = (p: any): number => {
+        const val = (p?.price as any);
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const digits = val.replace(/\D/g, '');
+          const n = Number(digits || '0');
+          return Number.isFinite(n) ? n : 0;
+        }
+        return 0;
+      };
+      const filtered = list.filter((p: any) => {
+        // Category filter (server may not support)
+        if (categoryValue) {
+          const cat = (p?.category || '').toString().toLowerCase();
+          if (categoryValue === 'vehicle' && cat !== 'vehicle') return false;
+          if (categoryValue === 'battery' && cat !== 'battery') return false;
+        }
+        // Price range filter (server may not support)
+        const price = getNumericPrice(p);
+        if (typeof minPriceFilter === 'number' && price < minPriceFilter) return false;
+        if (typeof maxPriceFilter === 'number' && price > maxPriceFilter) return false;
+        // Text search fallback
+        if (qLower) {
+          const title = (p?.title || '').toString().toLowerCase();
+          const brand = (p?.brand || '').toString().toLowerCase();
+          const model = (p?.model || '').toString().toLowerCase();
+          const spec = (p?.specifications?.batteryCapacity || '').toString().toLowerCase();
+          const hay = `${title} ${brand} ${model} ${spec}`;
+          if (!hay.includes(qLower)) return false;
+        }
+        return true;
+      });
+      setProducts(filtered);
     } catch (e) {
       setErrorText('Không tải được danh sách sản phẩm');
     } finally {
@@ -74,6 +152,10 @@ export default function HomeScreen() {
         setIsLoading(false);
       }
     }
+  };
+
+  const applyFilters = () => {
+    fetchProducts();
   };
 
   // Fetch wishlist items
@@ -117,8 +199,12 @@ export default function HomeScreen() {
   }, [navigation]);
 
   const onRefresh = () => {
-    fetchProducts(true);
+    fetchProducts({ isRefresh: true });
     fetchWishlist();
+  };
+
+  const onSubmitSearch = () => {
+    fetchProducts();
   };
 
   // Add/remove from wishlist
@@ -210,6 +296,7 @@ export default function HomeScreen() {
   const clearSearch = () => {
     setSearchText('');
     dismissKeyboard();
+    fetchProducts({ query: '' });
   };
 
   const formatPrice = (price?: number | string) => {
@@ -294,9 +381,9 @@ export default function HomeScreen() {
               placeholder="Tìm xe điện, pin theo hãng, đời, dung lượng..."
               placeholderTextColor="#999"
               value={searchText}
-              onChangeText={setSearchText}
-              returnKeyType="search"
-              onSubmitEditing={dismissKeyboard}
+                onChangeText={setSearchText}
+                returnKeyType="search"
+                onSubmitEditing={onSubmitSearch}
             />
             {searchText.length > 0 && (
               <TouchableOpacity 
@@ -340,9 +427,9 @@ export default function HomeScreen() {
               placeholder="Tìm sản phẩm..."
               placeholderTextColor="#999"
               value={searchText}
-              onChangeText={setSearchText}
-              returnKeyType="search"
-              onSubmitEditing={dismissKeyboard}
+                onChangeText={setSearchText}
+                returnKeyType="search"
+                onSubmitEditing={onSubmitSearch}
             />
             {searchText.length > 0 && (
               <TouchableOpacity 
@@ -390,13 +477,76 @@ export default function HomeScreen() {
         {/* Categories */}
         <View style={styles.categoriesContainer}>
           {categories.map((category) => (
-            <TouchableOpacity key={category.id} style={styles.categoryItem}>
+            <TouchableOpacity 
+              key={category.id} 
+              style={styles.categoryItem}
+              onPress={() => {
+                // Quick category mapping for vehicle/battery filters
+                let nextCategory: '' | 'vehicle' | 'battery' = '';
+                if (category.name.includes('Pin')) {
+                  nextCategory = 'battery';
+                } else if (category.name.includes('Xe')) {
+                  nextCategory = 'vehicle';
+                }
+                setFilterCategory(nextCategory);
+                fetchProducts({ category: nextCategory });
+              }}
+            >
               <View style={styles.categoryIcon}>
                 <Ionicons name={category.icon as any} size={32} color="#FF6B35" />
               </View>
               <Text style={styles.categoryText}>{category.name}</Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        {/* Filter Bar */}
+        <View style={styles.filterBar}>
+          <View style={styles.priceInputs}>
+            <View style={[styles.priceInputWrap, { marginRight: 8 }]}>
+              <Text style={styles.priceLabel}>Giá từ</Text>
+              <TextInput
+                style={styles.priceInput}
+                placeholder="0"
+                placeholderTextColor="#999"
+                keyboardType="numeric"
+                value={minPriceInput}
+                onChangeText={handleMinPriceChange}
+              />
+            </View>
+            <View style={styles.priceInputWrap}>
+              <Text style={styles.priceLabel}>Giá đến</Text>
+              <TextInput
+                style={styles.priceInput}
+                placeholder="10.000.000"
+                placeholderTextColor="#999"
+                keyboardType="numeric"
+                value={maxPriceInput}
+                onChangeText={handleMaxPriceChange}
+              />
+            </View>
+          </View>
+          <View style={styles.typeChips}>
+            <TouchableOpacity
+              onPress={() => setFilterCategory(filterCategory === 'vehicle' ? '' : 'vehicle')}
+              style={[styles.chip, filterCategory === 'vehicle' && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, filterCategory === 'vehicle' && styles.chipTextActive]}>Xe điện</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setFilterCategory(filterCategory === 'battery' ? '' : 'battery')}
+              style={[styles.chip, filterCategory === 'battery' && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, filterCategory === 'battery' && styles.chipTextActive]}>Pin</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={applyFilters}
+              style={styles.applyButton}
+            >
+              <Ionicons name="funnel-outline" size={16} color="#000" />
+              <Text style={styles.applyButtonText}>Lọc</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Products Grid */}
@@ -420,7 +570,7 @@ export default function HomeScreen() {
               {isPriority && (
                 <View style={styles.priorityBadge}>
                   <Ionicons name="flash" size={12} color="#fff" />
-                  <Text style={styles.priorityBadgeText}>PRO</Text>
+                  <Text style={styles.priorityBadgeText}>Ưu tiên</Text>
                 </View>
               )}
               <View style={styles.productImage}>
@@ -617,6 +767,79 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: 8,
     paddingTop: 8,
+  },
+  filterBar: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#eee',
+  },
+  priceInputs: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  priceInputWrap: {
+    flex: 1,
+  },
+  priceLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  priceInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    color: '#000',
+  },
+  typeChips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    backgroundColor: '#fff',
+  },
+  chipActive: {
+    borderColor: '#FFD700',
+    backgroundColor: '#FFF8DC',
+  },
+  chipText: {
+    fontSize: 12,
+    color: '#333',
+  },
+  chipTextActive: {
+    color: '#000',
+    fontWeight: '700',
+  },
+  applyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    backgroundColor: '#FFD700',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginLeft: 'auto',
+  },
+  applyButtonText: {
+    marginLeft: 6,
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '700',
   },
   productItem: {
     width: '48%',

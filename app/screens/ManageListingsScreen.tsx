@@ -1,21 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   Image,
   Modal,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
-  ActivityIndicator,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import * as ImagePicker from 'expo-image-picker';
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -34,6 +35,7 @@ export default function ManageListingsScreen() {
   const { accessToken, logout } = useAuth();
   const navigation = useNavigation();
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [showContractModal, setShowContractModal] = useState(false);
@@ -184,22 +186,15 @@ export default function ManageListingsScreen() {
   const isGesturing = useSharedValue(false);
   
   // Initialize indicator on mount
-  useEffect(() => {
-    loadMyProducts();
-    const initTimer = setTimeout(() => {
-      updateIndicatorPosition();
-    }, 100);
-    
-    return () => clearTimeout(initTimer);
-  }, []);
 
-  const authHeaders = () => ({
+  const authHeaders = React.useCallback(() => ({
     'Accept': 'application/json',
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-  });
+  }), [accessToken]);
 
-  const loadMyProducts = async () => {
-    setIsLoading(true);
+  const loadMyProducts = React.useCallback(async (options?: { silent?: boolean }) => {
+    const showSpinner = !(options?.silent);
+    if (showSpinner) setIsLoading(true);
     setErrorMsg(null);
     try {
       const res = await fetch(`${API_URL}/api/products/my/products`, {
@@ -230,9 +225,9 @@ export default function ManageListingsScreen() {
     } catch (e: any) {
       setErrorMsg(e?.message || 'Có lỗi xảy ra');
     } finally {
-      setIsLoading(false);
+      if (showSpinner) setIsLoading(false);
     }
-  };
+  }, [authHeaders, logout, navigation]);
 
   const fetchProductDetails = async (productId: string) => {
     try {
@@ -268,35 +263,67 @@ export default function ManageListingsScreen() {
         return;
       }
 
-      setEditingProduct(fullProduct);
+      const normalizedProduct =
+        fullProduct?.data?.product ??
+        fullProduct?.data ??
+        fullProduct?.product ??
+        fullProduct;
+
+      if (!normalizedProduct || typeof normalizedProduct !== 'object') {
+        Alert.alert('Lỗi', 'Không thể tải chi tiết sản phẩm');
+        return;
+      }
+
+      setEditingProduct({
+        ...normalizedProduct,
+        _id: normalizedProduct._id || product._id,
+      });
       setEditForm({
-        title: fullProduct.title || '',
-        price: fullProduct.price?.toString() || '',
-        description: fullProduct.description || '',
-        category: fullProduct.category || '',
-        brand: fullProduct.brand || '',
-        model: fullProduct.model || '',
-        year: fullProduct.year?.toString() || '',
-        condition: fullProduct.condition || '',
-        length: fullProduct.length?.toString() || '',
-        width: fullProduct.width?.toString() || '',
-        height: fullProduct.height?.toString() || '',
-        weight: fullProduct.weight?.toString() || '',
-        images: fullProduct.images || [],
+        title: normalizedProduct.title || '',
+        price:
+          normalizedProduct.price !== undefined && normalizedProduct.price !== null
+            ? String(normalizedProduct.price)
+            : '',
+        description: normalizedProduct.description || '',
+        category: normalizedProduct.category || '',
+        brand: normalizedProduct.brand || '',
+        model: normalizedProduct.model || '',
+        year:
+          normalizedProduct.year !== undefined && normalizedProduct.year !== null
+            ? String(normalizedProduct.year)
+            : '',
+        condition: normalizedProduct.condition || '',
+        length:
+          normalizedProduct.length !== undefined && normalizedProduct.length !== null
+            ? String(normalizedProduct.length)
+            : '',
+        width:
+          normalizedProduct.width !== undefined && normalizedProduct.width !== null
+            ? String(normalizedProduct.width)
+            : '',
+        height:
+          normalizedProduct.height !== undefined && normalizedProduct.height !== null
+            ? String(normalizedProduct.height)
+            : '',
+        weight:
+          normalizedProduct.weight !== undefined && normalizedProduct.weight !== null
+            ? String(normalizedProduct.weight)
+            : '',
+        images: Array.isArray(normalizedProduct.images) ? normalizedProduct.images : [],
         specifications: {
-          batteryCapacity: fullProduct.specifications?.batteryCapacity || '',
-          range: fullProduct.specifications?.range || '',
-          chargingTime: fullProduct.specifications?.chargingTime || '',
-          power: fullProduct.specifications?.power || '',
-          maxSpeed: fullProduct.specifications?.maxSpeed || '',
-          motorType: fullProduct.specifications?.motorType || '',
-          batteryType: fullProduct.specifications?.batteryType || '',
-          voltage: fullProduct.specifications?.voltage || '',
-          capacity: fullProduct.specifications?.capacity || '',
-          cycleLife: fullProduct.specifications?.cycleLife || '',
-          operatingTemperature: fullProduct.specifications?.operatingTemperature || '',
-          warranty: fullProduct.specifications?.warranty || '',
-          compatibility: fullProduct.specifications?.compatibility || ''
+          batteryCapacity: normalizedProduct.specifications?.batteryCapacity || '',
+          range: normalizedProduct.specifications?.range || '',
+          chargingTime: normalizedProduct.specifications?.chargingTime || '',
+          power: normalizedProduct.specifications?.power || '',
+          maxSpeed: normalizedProduct.specifications?.maxSpeed || '',
+          motorType: normalizedProduct.specifications?.motorType || '',
+          batteryType: normalizedProduct.specifications?.batteryType || '',
+          voltage: normalizedProduct.specifications?.voltage || '',
+          capacity: normalizedProduct.specifications?.capacity || '',
+          cycleLife: normalizedProduct.specifications?.cycleLife || '',
+          operatingTemperature: normalizedProduct.specifications?.operatingTemperature || '',
+          warranty: normalizedProduct.specifications?.warranty || '',
+          compatibility: normalizedProduct.specifications?.compatibility || ''
         }
       });
       setIsEditModalVisible(true);
@@ -614,6 +641,15 @@ export default function ManageListingsScreen() {
   };
 
   useEffect(() => {
+    loadMyProducts();
+    const initTimer = setTimeout(() => {
+      updateIndicatorPosition();
+    }, 100);
+    
+    return () => clearTimeout(initTimer);
+  }, [loadMyProducts]);
+
+  useEffect(() => {
     // Add multiple attempts with different delays
     const timer1 = setTimeout(() => {
       updateIndicatorPosition();
@@ -636,6 +672,15 @@ export default function ManageListingsScreen() {
     };
   }, [activeTab]);
 
+
+  const handleRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadMyProducts({ silent: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadMyProducts]);
 
   const getCountForTab = (index: number) => {
     const key = tabs[index]?.key as keyof typeof productsByStatus;
@@ -843,7 +888,19 @@ export default function ManageListingsScreen() {
         shouldCancelWhenOutside={true}
       >
         <Animated.View style={[styles.content, contentAnimatedStyle]}>
-          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 96 }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 96 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor="#000"
+                colors={['#FFD700']}
+              />
+            }
+          >
             {isLoading ? (
               <View style={styles.emptyContainer}>
                 <Ionicons name="reload" size={24} color="#999" />
@@ -854,7 +911,7 @@ export default function ManageListingsScreen() {
                 <Ionicons name="alert-circle-outline" size={48} color="#FF6B6B" />
                 <Text style={styles.emptyTitle}>Lỗi</Text>
                 <Text style={styles.emptySubtitle}>{errorMsg}</Text>
-                <TouchableOpacity style={styles.postButton} onPress={loadMyProducts}>
+                <TouchableOpacity style={styles.postButton} onPress={() => loadMyProducts()}>
                   <Text style={styles.postButtonText}>Thử lại</Text>
                 </TouchableOpacity>
               </View>
@@ -899,6 +956,7 @@ export default function ManageListingsScreen() {
                 value={editForm.title}
                 onChangeText={(text) => setEditForm(prev => ({ ...prev, title: text }))}
                 placeholder="Nhập tiêu đề tin đăng"
+                placeholderTextColor="#999"
                 multiline
               />
             </View>
@@ -910,6 +968,7 @@ export default function ManageListingsScreen() {
                 value={editForm.description}
                 onChangeText={(text) => setEditForm(prev => ({ ...prev, description: text }))}
                 placeholder="Mô tả chi tiết sản phẩm"
+                placeholderTextColor="#999"
                 multiline
                 numberOfLines={4}
               />
@@ -922,6 +981,7 @@ export default function ManageListingsScreen() {
                 value={editForm.price}
                 onChangeText={(text) => setEditForm(prev => ({ ...prev, price: text }))}
                 placeholder="Nhập giá sản phẩm"
+                placeholderTextColor="#999"
                 keyboardType="numeric"
               />
             </View>
@@ -934,6 +994,7 @@ export default function ManageListingsScreen() {
                   value={editForm.category}
                   onChangeText={(text) => setEditForm(prev => ({ ...prev, category: text }))}
                   placeholder="VD: vehicle, battery"
+                placeholderTextColor="#999"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
@@ -943,6 +1004,7 @@ export default function ManageListingsScreen() {
                   value={editForm.condition}
                   onChangeText={(text) => setEditForm(prev => ({ ...prev, condition: text }))}
                   placeholder="VD: new, used"
+                placeholderTextColor="#999"
                 />
               </View>
             </View>
@@ -955,6 +1017,7 @@ export default function ManageListingsScreen() {
                   value={editForm.brand}
                   onChangeText={(text) => setEditForm(prev => ({ ...prev, brand: text }))}
                   placeholder="VD: VinFast"
+                placeholderTextColor="#999"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
@@ -964,6 +1027,7 @@ export default function ManageListingsScreen() {
                   value={editForm.model}
                   onChangeText={(text) => setEditForm(prev => ({ ...prev, model: text }))}
                   placeholder="VD: VF8"
+                placeholderTextColor="#999"
                 />
               </View>
             </View>
@@ -975,6 +1039,7 @@ export default function ManageListingsScreen() {
                 value={editForm.year}
                 onChangeText={(text) => setEditForm(prev => ({ ...prev, year: text }))}
                 placeholder="VD: 2023"
+              placeholderTextColor="#999"
                 keyboardType="numeric"
               />
             </View>
@@ -1033,6 +1098,7 @@ export default function ManageListingsScreen() {
                   value={editForm.length}
                   onChangeText={(text) => setEditForm(prev => ({ ...prev, length: text }))}
                   placeholder="150"
+              placeholderTextColor="#999"
                   keyboardType="numeric"
                 />
               </View>
@@ -1043,6 +1109,7 @@ export default function ManageListingsScreen() {
                   value={editForm.width}
                   onChangeText={(text) => setEditForm(prev => ({ ...prev, width: text }))}
                   placeholder="60"
+              placeholderTextColor="#999"
                   keyboardType="numeric"
                 />
               </View>
@@ -1053,6 +1120,7 @@ export default function ManageListingsScreen() {
                   value={editForm.height}
                   onChangeText={(text) => setEditForm(prev => ({ ...prev, height: text }))}
                   placeholder="90"
+              placeholderTextColor="#999"
                   keyboardType="numeric"
                 />
               </View>
@@ -1065,6 +1133,7 @@ export default function ManageListingsScreen() {
                 value={editForm.weight}
                 onChangeText={(text) => setEditForm(prev => ({ ...prev, weight: text }))}
                 placeholder="50"
+            placeholderTextColor="#999"
                 keyboardType="numeric"
               />
             </View>
@@ -1085,6 +1154,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, batteryCapacity: text }
                   }))}
                   placeholder="VD: 3.5 kWh"
+                placeholderTextColor="#999"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
@@ -1097,6 +1167,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, range: text }
                   }))}
                   placeholder="VD: 203 km"
+                placeholderTextColor="#999"
                 />
               </View>
             </View>
@@ -1112,6 +1183,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, chargingTime: text }
                   }))}
                   placeholder="VD: 6-7 giờ"
+                placeholderTextColor="#999"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
@@ -1124,6 +1196,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, power: text }
                   }))}
                   placeholder="VD: 2,500 W"
+                placeholderTextColor="#999"
                 />
               </View>
             </View>
@@ -1139,6 +1212,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, maxSpeed: text }
                   }))}
                   placeholder="VD: 120 km/h"
+                placeholderTextColor="#999"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
@@ -1151,6 +1225,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, motorType: text }
                   }))}
                   placeholder="VD: Permanent Magnet"
+                placeholderTextColor="#999"
                 />
               </View>
             </View>
@@ -1166,6 +1241,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, batteryType: text }
                   }))}
                   placeholder="VD: LFP"
+                placeholderTextColor="#999"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
@@ -1178,6 +1254,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, voltage: text }
                   }))}
                   placeholder="VD: 48V"
+                placeholderTextColor="#999"
                 />
               </View>
             </View>
@@ -1193,6 +1270,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, capacity: text }
                   }))}
                   placeholder="VD: 34.6 Ah"
+                placeholderTextColor="#999"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
@@ -1205,6 +1283,7 @@ export default function ManageListingsScreen() {
                     specifications: { ...prev.specifications, cycleLife: text }
                   }))}
                   placeholder="VD: 2000 chu kỳ"
+                placeholderTextColor="#999"
                 />
               </View>
             </View>
@@ -1219,6 +1298,7 @@ export default function ManageListingsScreen() {
                   specifications: { ...prev.specifications, operatingTemperature: text }
                 }))}
                 placeholder="VD: -10°C đến 45°C"
+              placeholderTextColor="#999"
               />
             </View>
 
@@ -1232,6 +1312,7 @@ export default function ManageListingsScreen() {
                   specifications: { ...prev.specifications, warranty: text }
                 }))}
                 placeholder="VD: 3 năm hoặc 30,000 km"
+              placeholderTextColor="#999"
               />
             </View>
 
@@ -1245,6 +1326,7 @@ export default function ManageListingsScreen() {
                   specifications: { ...prev.specifications, compatibility: text }
                 }))}
                 placeholder="VD: Tương thích trạm sạc VinFast"
+              placeholderTextColor="#999"
               />
             </View>
           </ScrollView>

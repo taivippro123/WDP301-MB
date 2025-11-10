@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
@@ -22,7 +23,6 @@ import {
 } from 'react-native';
 import API_URL from '../../config/api';
 import { useAuth } from '../AuthContext';
-import { useNavigation } from '@react-navigation/native';
 
 export default function PostListingScreen() {
     const { accessToken, logout } = useAuth();
@@ -66,6 +66,51 @@ export default function PostListingScreen() {
         setFormData(prev => ({ ...prev, [field]: value }));
         setErrors(prev => ({ ...prev, [field]: '' }));
     };
+
+    const formatVndInput = React.useCallback((value: string) => {
+        const digits = (value || '').replace(/\D/g, '');
+        if (!digits) return '';
+        try {
+            return Number(digits).toLocaleString('vi-VN');
+        } catch {
+            return digits;
+        }
+    }, []);
+
+    const handlePriceChange = React.useCallback((value: string) => {
+        const formatted = formatVndInput(value);
+        setFormData(prev => ({ ...prev, price: formatted }));
+        setErrors(prev => ({ ...prev, price: '' }));
+    }, [formatVndInput]);
+
+    const normalizeDecimalInput = React.useCallback((value: string) => {
+        if (!value) return '';
+        const sanitized = value.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+        if (!sanitized) return '';
+        const segments = sanitized.split('.');
+        if (segments.length <= 2) return sanitized;
+        return `${segments.shift()}.${segments.join('')}`;
+    }, []);
+
+    const handleDimensionChange = React.useCallback((field: 'length' | 'width' | 'height', value: string) => {
+        const normalized = normalizeDecimalInput(value);
+        setFormData(prev => ({ ...prev, [field]: normalized }));
+        setErrors(prev => ({ ...prev, [field]: '' }));
+    }, [normalizeDecimalInput]);
+
+    const handleWeightChange = React.useCallback((value: string) => {
+        const normalized = normalizeDecimalInput(value);
+        setFormData(prev => ({ ...prev, weight: normalized }));
+        setErrors(prev => ({ ...prev, weight: '' }));
+    }, [normalizeDecimalInput]);
+
+    const parseToNumber = React.useCallback((value: string): number | null => {
+        if (!value) return null;
+        const normalized = value.replace(/[^0-9.,]/g, '').replace(/,/g, '.');
+        if (!normalized) return null;
+        const num = Number(normalized);
+        return Number.isFinite(num) ? num : null;
+    }, []);
 
     const guessMimeFromUri = (uri: string, fallback: 'image' | 'video') => {
         const lower = (uri || '').toLowerCase();
@@ -128,28 +173,62 @@ export default function PostListingScreen() {
             return;
         }
         const yearNum = formData.year ? Number(formData.year) : undefined;
-        const priceNum = Number(String(formData.price).replace(/[^0-9.]/g, ''));
+        const priceNum = Number(String(formData.price).replace(/[^0-9]/g, ''));
         if (Number.isNaN(priceNum)) {
             Alert.alert('Lỗi', 'Giá không hợp lệ');
             return;
         }
         // Dimensions and weight (required by server)
-        const lengthNum = Number(formData.length);
-        const widthNum = Number(formData.width);
-        const heightNum = Number(formData.height);
-        const weightNum = Number(formData.weight);
-        if ([lengthNum, widthNum, heightNum, weightNum].some((v) => Number.isNaN(v))) {
+        const lengthMeters = parseToNumber(formData.length);
+        const widthMeters = parseToNumber(formData.width);
+        const heightMeters = parseToNumber(formData.height);
+        const weightKg = parseToNumber(formData.weight);
+        if ([lengthMeters, widthMeters, heightMeters, weightKg].some((v) => v === null || Number.isNaN(v as number))) {
             Alert.alert('Lỗi', 'Kích thước/khối lượng không hợp lệ');
             return;
         }
-        if (lengthNum < 1 || lengthNum > 200 || widthNum < 1 || widthNum > 200 || heightNum < 1 || heightNum > 200) {
-            Alert.alert('Lỗi', 'Chiều dài/rộng/cao phải trong khoảng 1-200 cm');
+        if (
+            (lengthMeters as number) <= 0 ||
+            (widthMeters as number) <= 0 ||
+            (heightMeters as number) <= 0 ||
+            (weightKg as number) <= 0
+        ) {
+            Alert.alert('Lỗi', 'Kích thước/khối lượng phải lớn hơn 0');
             return;
         }
-        if (weightNum < 1 || weightNum > 1600000) {
-            Alert.alert('Lỗi', 'Khối lượng (gram) phải trong khoảng 1 - 1,600,000');
-            return;
+
+        if (formData.category === 'battery') {
+            if (
+                (lengthMeters as number) >= 1 ||
+                (widthMeters as number) >= 1 ||
+                (heightMeters as number) >= 1
+            ) {
+                Alert.alert('Lỗi', 'Pin phải có chiều dài, rộng, cao dưới 1 mét (100 cm)');
+                return;
+            }
+            if ((weightKg as number) >= 10) {
+                Alert.alert('Lỗi', 'Pin phải nặng dưới 10 kg (10.000 gram)');
+                return;
+            }
+        } else {
+            if (
+                (lengthMeters as number) >= 6 ||
+                (widthMeters as number) >= 6 ||
+                (heightMeters as number) >= 6
+            ) {
+                Alert.alert('Lỗi', 'Xe điện phải có chiều dài, rộng, cao dưới 6 mét (600 cm)');
+                return;
+            }
+            if ((weightKg as number) >= 4000) {
+                Alert.alert('Lỗi', 'Xe điện phải nặng dưới 4.000 kg (4.000.000 gram)');
+                return;
+            }
         }
+
+        const lengthNum = Math.round((lengthMeters as number) * 100);
+        const widthNum = Math.round((widthMeters as number) * 100);
+        const heightNum = Math.round((heightMeters as number) * 100);
+        const weightNum = Math.round((weightKg as number) * 1000);
         if (selectedMedia.length === 0) {
             Alert.alert('Lỗi', 'Vui lòng chọn ít nhất 1 ảnh hoặc video sản phẩm');
             return;
@@ -538,8 +617,8 @@ export default function PostListingScreen() {
                                         placeholder="Nhập giá bán"
                                         placeholderTextColor="#999"
                                         value={String(formData.price)}
-                                        onChangeText={(t) => updateFormData('price', t)}
-                                        keyboardType="numeric"
+                                        onChangeText={handlePriceChange}
+                                        keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
                                     />
                                     {!!errors.price && <Text style={styles.errorText}>{errors.price}</Text>}
                                     <TouchableOpacity 
@@ -562,10 +641,10 @@ export default function PostListingScreen() {
                             {/* Dimensions & Weight (required) */}
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>Kích thước & Khối lượng <Text style={styles.required}>*</Text></Text>
-                                {renderInput('Chiều dài (cm)', String(formData.length), (t) => updateFormData('length', t), true, 'numeric', 'VD: 150', 'length')}
-                                {renderInput('Chiều rộng (cm)', String(formData.width), (t) => updateFormData('width', t), true, 'numeric', 'VD: 60', 'width')}
-                                {renderInput('Chiều cao (cm)', String(formData.height), (t) => updateFormData('height', t), true, 'numeric', 'VD: 90', 'height')}
-                                {renderInput('Khối lượng (gram)', String(formData.weight), (t) => updateFormData('weight', t), true, 'numeric', 'VD: 50000', 'weight')}
+                                {renderInput('Chiều dài (m)', String(formData.length), (t) => handleDimensionChange('length', t), true, Platform.OS === 'ios' ? 'decimal-pad' : 'numeric', 'VD: 1.5', 'length')}
+                                {renderInput('Chiều rộng (m)', String(formData.width), (t) => handleDimensionChange('width', t), true, Platform.OS === 'ios' ? 'decimal-pad' : 'numeric', 'VD: 0.75', 'width')}
+                                {renderInput('Chiều cao (m)', String(formData.height), (t) => handleDimensionChange('height', t), true, Platform.OS === 'ios' ? 'decimal-pad' : 'numeric', 'VD: 1.2', 'height')}
+                                {renderInput('Khối lượng (kg)', String(formData.weight), handleWeightChange, true, Platform.OS === 'ios' ? 'decimal-pad' : 'numeric', formData.category === 'battery' ? 'VD: 6.5' : 'VD: 120', 'weight')}
                             </View>
 
                             <View style={styles.inputGroup}>
