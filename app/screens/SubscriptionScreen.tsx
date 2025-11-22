@@ -130,12 +130,16 @@ export default function SubscriptionScreen() {
   };
 
   const handlePurchase = () => {
-    const planId = '68f6358694b8406c57d9212f';
-    const price = 299000;
+    if (!subscription) return;
+
+    // Lấy planId từ subscription hiện tại (nếu có) hoặc dùng planId mặc định
+    const planId = subscription.planId?._id || '68f6358694b8406c57d9212f';
+    const price = subscription.planId?.priceVnd || 299000;
+    const isRenewal = isSubscriptionExpired();
 
     Alert.alert(
-      'Xác nhận nâng cấp',
-      `Bạn sẽ bị trừ ${formatPrice(price)} xu để nâng cấp gói PRO trong vòng 1 tháng.`,
+      isRenewal ? 'Xác nhận gia hạn' : 'Xác nhận nâng cấp',
+      `Bạn sẽ bị trừ ${formatPrice(price)} xu để ${isRenewal ? 'gia hạn' : 'nâng cấp'} gói ${subscription.planId?.name || 'PRO'} trong vòng ${subscription.planId?.billingCycle === 'monthly' ? '1 tháng' : '1 năm'}.`,
       [
         {
           text: 'Hủy',
@@ -179,7 +183,10 @@ export default function SubscriptionScreen() {
               }
 
               // Success - refresh subscription data
-              Alert.alert('Thành công', 'Gói đăng ký đã được nâng cấp thành công!');
+              Alert.alert(
+                'Thành công', 
+                isRenewal ? 'Gói đăng ký đã được gia hạn thành công!' : 'Gói đăng ký đã được nâng cấp thành công!'
+              );
               await fetchSubscription();
             } catch (error: any) {
               console.error('Purchase error:', error);
@@ -248,6 +255,19 @@ export default function SubscriptionScreen() {
       default:
         return '#666';
     }
+  };
+
+  // Kiểm tra subscription đã hết hạn chưa
+  const isSubscriptionExpired = () => {
+    if (!subscription) return false;
+    
+    // Kiểm tra status
+    if (subscription.status === 'expired') return true;
+    
+    // Kiểm tra ngày hết hạn
+    const expiresAt = new Date(subscription.expiresAt);
+    const now = new Date();
+    return expiresAt < now;
   };
 
   const renderUsageBar = (used: number, max: number, label: string) => {
@@ -533,7 +553,7 @@ export default function SubscriptionScreen() {
           </View>
         </View>
 
-        {/* Upgrade Button */}
+        {/* Upgrade Button - Hiển thị khi gói free */}
         {subscription.planKey === 'free' && (
           <TouchableOpacity 
             style={[styles.upgradeButton, isPurchasing && styles.upgradeButtonDisabled]} 
@@ -547,6 +567,24 @@ export default function SubscriptionScreen() {
             )}
             <Text style={styles.upgradeButtonText}>
               {isPurchasing ? 'Đang xử lý...' : 'Nâng cấp gói đăng ký'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Renew Button - Hiển thị khi subscription đã hết hạn */}
+        {subscription.planKey !== 'free' && isSubscriptionExpired() && (
+          <TouchableOpacity 
+            style={[styles.renewButton, isPurchasing && styles.renewButtonDisabled]} 
+            onPress={handlePurchase}
+            disabled={isPurchasing}
+          >
+            {isPurchasing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="refresh" size={24} color="#fff" />
+            )}
+            <Text style={styles.renewButtonText}>
+              {isPurchasing ? 'Đang xử lý...' : 'Gia hạn gói đăng ký'}
             </Text>
           </TouchableOpacity>
         )}
@@ -881,6 +919,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#000',
+  },
+  renewButton: {
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  renewButtonDisabled: {
+    opacity: 0.6,
+  },
+  renewButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
   },
 });
 

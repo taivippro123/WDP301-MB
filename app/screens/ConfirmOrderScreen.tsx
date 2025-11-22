@@ -495,7 +495,12 @@ export default function ConfirmOrderScreen() {
             <View style={styles.rowBetween}>
               <Text style={styles.totalLabel}>Tổng tiền hàng</Text>
               <Text style={styles.totalValue}>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total)}</Text>
+             
             </View>
+            <View style={styles.rowBetween}>
+            <Text>Không bao gồm phí vận chuyển</Text>
+            </View>
+
           </View>
         </ScrollView>
       )}

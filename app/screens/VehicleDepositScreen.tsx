@@ -172,13 +172,13 @@ export default function VehicleDepositScreen() {
 
       Alert.alert(
         'Đặt cọc thành công!',
-        `Đã thanh toán ${formatPrice(depositAmount)} từ ví.\n\n${json.data?.note || 'Admin sẽ liên hệ để xác nhận giao dịch.'}`,
+        `Đã thanh toán ${formatPrice(depositAmount)} từ ví.\n\n${json.data?.note || 'Admin sẽ liên hệ để xác nhận giao dịch.'}\n\nBạn có thể xem đơn hàng trong mục "Tài khoản" > "Lịch sử đơn hàng".`,
         [
           {
             text: 'OK',
             onPress: () => {
+              // Simply go back to ProductDetail screen
               navigation.goBack();
-              (navigation as any).navigate('Orders');
             },
           },
         ]
